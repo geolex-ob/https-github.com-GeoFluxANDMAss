@@ -1,0 +1,38 @@
+{
+    "fluidDensity": 1800,
+    "items": [
+        {
+            "length": 1,
+            "tool": {
+                "density": 7850,
+                "innerDiameter": 90,
+                "name": "УБТ229*90",
+                "outerDiameter": 229,
+                "volumePerMeter": 0.03337579617834395,
+                "weightPerMeter": 262
+            }
+        },
+        {
+            "length": 1,
+            "tool": {
+                "density": 7850,
+                "innerDiameter": 90,
+                "name": "УБТ229*90",
+                "outerDiameter": 229,
+                "volumePerMeter": 0.03337579617834395,
+                "weightPerMeter": 262
+            }
+        },
+        {
+            "length": 1,
+            "tool": {
+                "density": 7850,
+                "innerDiameter": 90,
+                "name": "УБТ229*90",
+                "outerDiameter": 229,
+                "volumePerMeter": 0.03337579617834395,
+                "weightPerMeter": 262
+            }
+        }
+    ]
+}

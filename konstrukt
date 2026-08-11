@@ -1,0 +1,22 @@
+{
+    "casings": [
+        {
+            "cavernosity": 1,
+            "endDepth": 700,
+            "innerDiameter": 303,
+            "isOpenHole": false,
+            "name": "Новая колонна",
+            "outerDiameter": 324,
+            "startDepth": 0
+        },
+        {
+            "cavernosity": 1,
+            "endDepth": 2185,
+            "innerDiameter": 297,
+            "isOpenHole": false,
+            "name": "Новая колонна",
+            "outerDiameter": 500,
+            "startDepth": 700
+        }
+    ]
+}
