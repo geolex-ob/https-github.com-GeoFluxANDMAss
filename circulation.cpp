@@ -23,11 +23,17 @@ double LayoutItem::weightInAir() const
 
 double LayoutItem::weightInFluid(double fluidDensity) const
 {
-    // Вес в жидкости = вес в воздухе - выталкивающая сила
-    double weightAir = weightInAir();
-    double steelVolume = volumeOuter() - volumeInner();
-    double buoyancy = steelVolume * fluidDensity / 1000.0; // тонн
-    return weightAir - buoyancy;
+    double weightAir = weightInAir(); // вес в воздухе, тонн
+
+    double steelDensity = tool.density();
+
+    if (steelDensity <= 0.0)
+        steelDensity = 7850.0;
+
+    // Коэффициент плавучести
+    double buoyancyFactor = 1.0 - (fluidDensity / steelDensity);
+
+    return weightAir * buoyancyFactor;
 }
 
 CirculationCalculator::CirculationCalculator()

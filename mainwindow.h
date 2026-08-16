@@ -13,6 +13,7 @@
 #include <QStandardItemModel>
 #include <QScrollArea>
 #include <QDir>
+#include <QVector>
 
 #include "toolmodel.h"
 #include "circulation.h"
@@ -49,6 +50,8 @@ private slots:
     void onSaveWell();
     void onLoadWell();
 
+    void onAbout();
+
     void autoSaveAll();
 
 private:
@@ -62,13 +65,21 @@ private:
     void saveSettings();
     void updateVisualization();
     void refreshLayoutTable();
-    
+
+    QVector<double> cumulativeLayoutLength() const;
+
     void saveLayoutToCSV(const QString &filename);
-    void loadLayoutFromCSV(const QString &filename);
+    void loadLayoutFromCSV(const QString &filename, bool autoSave = true);
+
     void saveWellToCSV(const QString &filename);
-    void loadWellFromCSV(const QString &filename);
-    
+    void loadWellFromCSV(const QString &filename, bool autoSave = true);
+
+    void recalculateCirculation(bool autoSave);
+
     QString dataPath() const;
+
+    bool m_updatingLayout = false;
+    bool m_updatingWell = false;
 
     QTableView *m_toolTable;
     ToolModel *m_toolModel;
