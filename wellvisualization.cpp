@@ -1,373 +1,315 @@
 #include "wellvisualization.h"
-#include <cmath>
-#include <algorithm>
+
+#include <QGraphicsScene>
+#include <QPen>
+#include <QBrush>
+#include <QColor>
+#include <QFont>
+#include <QPainter>
+#include <QResizeEvent>
+#include <QGraphicsTextItem>
+#include <QtGlobal>
 
 WellVisualization::WellVisualization(QWidget *parent)
-    : QWidget(parent)
-    , m_scaleX(0.5)
-    , m_scaleY(1.5)
-    , m_offsetX(50)
-    , m_offsetY(20)
-    , m_dragging(false)
-    , m_maxOuterDiameter(500)
-    , m_totalDepth(2000)
-    , m_soilColor(139, 119, 80)
-    , m_casingColor(180, 180, 180)
-    , m_cementColor(200, 200, 200)
-    , m_toolColor(70, 130, 180)
-    , m_openHoleColor(160, 140, 100)
-    , m_fluidColor(100, 149, 237)
+    : QGraphicsView(parent)
 {
-    setMinimumSize(400, 400);
-    setMouseTracking(true);
-    setFocusPolicy(Qt::StrongFocus);
+    m_scene = new QGraphicsScene(this);
+    setScene(m_scene);
+
+    setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);
+    setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
+    setDragMode(QGraphicsView::ScrollHandDrag);
+
+    setTransformationAnchor(QGraphicsView::AnchorViewCenter);
+    setResizeAnchor(QGraphicsView::AnchorViewCenter);
+
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+
+    setBackgroundBrush(QColor(245, 245, 245));
 }
 
 void WellVisualization::setWellConstruction(const WellConstruction &wc)
 {
-    m_wellConstruction = wc;
-    
-    m_maxOuterDiameter = 100;
-    m_totalDepth = 0;
-    
-    for (const auto &c : m_wellConstruction.casings()) {
-        m_maxOuterDiameter = std::max(m_maxOuterDiameter, c.outerDiameter);
-        m_totalDepth = std::max(m_totalDepth, c.endDepth);
+    m_casings.clear();
+
+    // ВАЖНО:
+    // Здесь предполагается, что в классе WellConstruction есть метод:
+    // QVector<Casing> casings() const;
+    //
+    // Если у вас он называется иначе, например allCasings() или casingsList(),
+    // замените строку ниже.
+    const auto casings = wc.casings();
+
+    for (const Casing &c : casings) {
+        CasingItem item;
+
+        item.startDepth = c.startDepth;
+        item.endDepth = c.endDepth;
+        item.outerDiameter = c.outerDiameter;
+        item.innerDiameter = c.innerDiameter;
+        item.cavernosity = c.cavernosity;
+        item.isOpenHole = c.isOpenHole;
+
+        m_casings.append(item);
     }
-    
-    for (const auto &item : m_layout) {
-        m_maxOuterDiameter = std::max(m_maxOuterDiameter, item.tool.outerDiameter());
-    }
-    
-    fitToScreen();
-    update();
+
+    rebuildScene();
 }
 
-void WellVisualization::setLayout(const QVector<LayoutItem> &items)
+void WellVisualization::setLayout(const QVector<LayoutItem> &layout)
 {
-    m_layout = items;
-    
-    for (const auto &item : m_layout) {
-        m_maxOuterDiameter = std::max(m_maxOuterDiameter, item.tool.outerDiameter());
-    }
-    
-    update();
-}
-
-void WellVisualization::clear()
-{
-    m_wellConstruction.clear();
-    m_layout.clear();
-    update();
+    m_layout = layout;
+    rebuildScene();
 }
 
 void WellVisualization::zoomIn()
 {
-    m_scaleX *= 1.2;
-    m_scaleY *= 1.2;
-    update();
+    scale(1.2, 1.2);
 }
 
 void WellVisualization::zoomOut()
 {
-    m_scaleX /= 1.2;
-    m_scaleY /= 1.2;
-    update();
+    scale(1.0 / 1.2, 1.0 / 1.2);
 }
 
 void WellVisualization::fitToScreen()
 {
-    if (m_totalDepth <= 0) return;
-    
-    double availableHeight = height() - 120;
-    m_scaleY = availableHeight / m_totalDepth;
-    m_scaleX = 0.4;
-    m_scaleX = std::max(m_scaleX, 0.1);
-    m_scaleY = std::max(m_scaleY, 0.5);
-    m_offsetX = 80;
-    m_offsetY = 60;
-    update();
-}
-
-void WellVisualization::paintEvent(QPaintEvent *event)
-{
-    Q_UNUSED(event);
-    
-    QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.fillRect(rect(), QColor(245, 245, 245));
-    
-    if (m_wellConstruction.casings().isEmpty()) {
-        painter.setPen(Qt::gray);
-        painter.setFont(QFont("Arial", 12));
-        painter.drawText(rect(), Qt::AlignCenter, 
-                        "Нет данных для отображения\nДобавьте конструкцию скважины");
+    if (!scene())
         return;
-    }
-    
-    drawDepthScale(painter);
-    
-    painter.save();
-    int wellCenterX = width() / 2;
-    painter.translate(wellCenterX, m_offsetY);
-    drawWellbore(painter);
-    
-    if (!m_layout.isEmpty()) {
-        drawToolInWell(painter);
-    }
-    
-    painter.restore();
-    
-    painter.setPen(Qt::black);
-    painter.setFont(QFont("Arial", 12, QFont::Bold));
-    painter.drawText(0, 10, width(), 25, Qt::AlignHCenter, "Конструкция скважины с буровым инструментом");
-    
-    drawLegend(painter);
-}
 
-void WellVisualization::drawWellbore(QPainter &painter)
-{
-    if (m_wellConstruction.casings().isEmpty()) return;
-    
-    double maxWidth = m_maxOuterDiameter * m_scaleX;
-    
-    for (const auto &casing : m_wellConstruction.casings()) {
-        double yStart = casing.startDepth * m_scaleY;
-        double yEnd = casing.endDepth * m_scaleY;
-        double height = yEnd - yStart;
-        
-        if (height <= 0) continue;
-        
-        if (casing.isOpenHole) {
-            double drillBitRadius = (casing.outerDiameter / 2) * m_scaleX;
-            double holeRadius = drillBitRadius * casing.cavernosity;
-            
-            painter.setBrush(m_soilColor);
-            painter.setPen(QPen(Qt::darkGray, 1));
-            painter.drawRect(QRectF(-maxWidth, yStart, maxWidth * 2, height));
-            
-            painter.setBrush(m_openHoleColor);
-            painter.setPen(QPen(Qt::darkGray, 1, Qt::DashLine));
-            painter.drawRect(QRectF(-holeRadius, yStart, holeRadius * 2, height));
-            
-            painter.setPen(QPen(Qt::darkGray, 0.5, Qt::DotLine));
-            painter.drawLine(-drillBitRadius, yStart, -drillBitRadius, yEnd);
-            painter.drawLine(drillBitRadius, yStart, drillBitRadius, yEnd);
-            
-            painter.setBrush(m_fluidColor);
-            painter.setPen(Qt::NoPen);
-            painter.drawRect(QRectF(-holeRadius, yStart, holeRadius * 2, height));
-            
-            painter.setPen(Qt::black);
-            painter.setFont(QFont("Arial", 7));
-            QString label = casing.name + "\n" + 
-                          QString::number(casing.outerDiameter, 'f', 0) + "мм" +
-                          " K=" + QString::number(casing.cavernosity, 'f', 2);
-            
-            QRectF textRect(-maxWidth - 120, yStart, 115, height);
-            painter.drawText(textRect, Qt::AlignRight | Qt::AlignVCenter, label);
-            
-        } else {
-            double outerRadius = (casing.outerDiameter / 2) * m_scaleX;
-            double innerRadius = (casing.innerDiameter / 2) * m_scaleX;
-            
-            painter.setBrush(m_cementColor);
-            painter.setPen(Qt::NoPen);
-            painter.drawRect(QRectF(-outerRadius, yStart, outerRadius * 2, height));
-            
-            painter.setBrush(m_casingColor);
-            painter.setPen(QPen(Qt::darkGray, 2));
-            painter.drawRect(QRectF(-outerRadius, yStart, outerRadius * 2, height));
-            
-            painter.setBrush(m_fluidColor);
-            painter.setPen(QPen(Qt::gray, 1));
-            painter.drawRect(QRectF(-innerRadius, yStart, innerRadius * 2, height));
-            
-            painter.setPen(Qt::black);
-            painter.setFont(QFont("Arial", 7));
-            QString label = casing.name + "\n" + 
-                          QString::number(casing.outerDiameter, 'f', 0) + "×" +
-                          QString::number(casing.innerDiameter, 'f', 0) + "мм";
-            
-            QRectF textRect(-maxWidth - 120, yStart, 115, height);
-            painter.drawText(textRect, Qt::AlignRight | Qt::AlignVCenter, label);
-        }
-    }
-}
+    QRectF r = sceneRect();
 
-void WellVisualization::drawToolInWell(QPainter &painter)
-{
-    if (m_layout.isEmpty()) return;
-    
-    // Начинаем от устья (глубина 0) и идем вниз к забою
-    double currentDepth = 0;
-    
-    // Проходим от начала списка к концу: 0, 1, 2, ..., N-1
-    // Элемент 0 (СБТ) — устье, рисуется первым (вверху)
-    // Элемент N-1 (долото) — забой, рисуется последним (внизу)
-    for (int i = 0; i < m_layout.size(); ++i) {
-        const auto &item = m_layout[i];
-        
-        double yStart = currentDepth * m_scaleY;
-        double yEnd = (currentDepth + item.length) * m_scaleY;
-        double height = yEnd - yStart;
-        
-        if (height < 2) {
-            currentDepth += item.length;
-            continue;
-        }
-        
-        double outerRadius = (item.tool.outerDiameter() / 2) * m_scaleX;
-        double innerRadius = (item.tool.innerDiameter() / 2) * m_scaleX;
-        
-        // Тень
-        painter.setBrush(QColor(50, 90, 140));
-        painter.setPen(Qt::NoPen);
-        painter.drawRect(QRectF(-outerRadius + 1, yStart + 1, outerRadius * 2, height));
-        
-        // Тело инструмента с градиентом
-        QLinearGradient gradient(-outerRadius, 0, outerRadius, 0);
-        gradient.setColorAt(0, m_toolColor.darker(120));
-        gradient.setColorAt(0.3, m_toolColor.lighter(120));
-        gradient.setColorAt(0.5, m_toolColor.lighter(150));
-        gradient.setColorAt(0.7, m_toolColor.lighter(120));
-        gradient.setColorAt(1, m_toolColor.darker(120));
-        
-        painter.setBrush(gradient);
-        painter.setPen(QPen(Qt::darkBlue, 1));
-        painter.drawRect(QRectF(-outerRadius, yStart, outerRadius * 2, height));
-        
-        // Внутренний канал
-        if (innerRadius > 0) {
-            painter.setBrush(m_fluidColor.darker(105));
-            painter.setPen(QPen(Qt::darkBlue, 0.5));
-            painter.drawRect(QRectF(-innerRadius, yStart, innerRadius * 2, height));
-        }
-        
-        // Подписи
-        if (height > 20) {
-            painter.setPen(Qt::white);
-            painter.setFont(QFont("Arial", 6, QFont::Bold));
-            QString nameText = item.tool.name();
-            if (nameText.length() > 12) nameText = nameText.left(11) + ".";
-            QRectF textRect(-outerRadius, yStart, outerRadius * 2, height);
-            painter.drawText(textRect, Qt::AlignCenter, nameText);
-        }
-        
-        // Выноска с длиной
-        painter.setPen(QPen(Qt::darkBlue, 0.5, Qt::DashLine));
-        double lineX = outerRadius + 5;
-        painter.drawLine(lineX, yStart, lineX + 25, yStart);
-        painter.drawLine(lineX + 25, yStart, lineX + 25, yStart + height);
-        painter.drawLine(lineX + 25, yStart + height, lineX, yStart + height);
-        
-        painter.setPen(Qt::black);
-        painter.setFont(QFont("Arial", 7));
-        QString lengthText = QString::number(item.length, 'f', 1) + "м";
-        painter.drawText(lineX + 28, yStart + height/2 - 8, 60, 16,
-                        Qt::AlignLeft | Qt::AlignVCenter, lengthText);
-        
-        currentDepth += item.length;
-    }
-}
+    if (r.isNull() || r.isEmpty())
+        return;
 
-void WellVisualization::drawDepthScale(QPainter &painter)
-{
-    painter.setPen(Qt::black);
-    painter.setFont(QFont("Arial", 8));
-    
-    double depthStep = 100;
-    if (m_totalDepth > 5000) depthStep = 500;
-    else if (m_totalDepth > 2000) depthStep = 200;
-    
-    int leftX = 10;
-    int rightX = 60;
-    
-    for (double depth = 0; depth <= m_totalDepth + depthStep; depth += depthStep) {
-        double y = depth * m_scaleY + m_offsetY;
-        if (y >= 0 && y <= height()) {
-            painter.drawLine(leftX, (int)y, rightX, (int)y);
-            QString text = QString::number(depth, 'f', 0);
-            painter.drawText(leftX + 5, (int)y - 10, 50, 20, 
-                           Qt::AlignLeft | Qt::AlignVCenter, text);
-        }
-    }
-}
-
-void WellVisualization::drawLegend(QPainter &painter)
-{
-    int legendX = width() - 170;
-    int legendY = 30;
-    
-    painter.setFont(QFont("Arial", 8));
-    
-    struct { QString text; QColor color; } items[] = {
-        {"Обсадная колонна", m_casingColor},
-        {"Цемент", m_cementColor},
-        {"Голый ствол", m_openHoleColor},
-        {"Буровой раствор", m_fluidColor},
-        {"Инструмент", m_toolColor}
-    };
-    
-    for (int i = 0; i < 5; ++i) {
-        int y = legendY + i * 18;
-        painter.setBrush(items[i].color);
-        painter.setPen(Qt::black);
-        painter.drawRect(legendX, y, 12, 12);
-        painter.setPen(Qt::black);
-        painter.drawText(legendX + 18, y, 130, 12, 
-                        Qt::AlignLeft | Qt::AlignVCenter, items[i].text);
-    }
-}
-
-void WellVisualization::wheelEvent(QWheelEvent *event)
-{
-    if (event->modifiers() & Qt::ControlModifier) {
-        if (event->angleDelta().y() > 0) zoomIn();
-        else zoomOut();
-        event->accept();
-    } else {
-        QWidget::wheelEvent(event);
-    }
-}
-
-void WellVisualization::mousePressEvent(QMouseEvent *event)
-{
-    if (event->button() == Qt::LeftButton) {
-        m_dragging = true;
-        m_lastMousePos = event->pos();
-        setCursor(Qt::ClosedHandCursor);
-        event->accept();
-    }
-}
-
-void WellVisualization::mouseMoveEvent(QMouseEvent *event)
-{
-    if (m_dragging) {
-        QPoint delta = event->pos() - m_lastMousePos;
-        m_offsetX += delta.x();
-        m_offsetY += delta.y();
-        m_lastMousePos = event->pos();
-        update();
-        event->accept();
-    }
-}
-
-void WellVisualization::mouseReleaseEvent(QMouseEvent *event)
-{
-    if (event->button() == Qt::LeftButton) {
-        m_dragging = false;
-        setCursor(Qt::ArrowCursor);
-        event->accept();
-    }
+    // Сохранение пропорций изображения
+    fitInView(r.adjusted(-20, -20, 20, 20), Qt::KeepAspectRatio);
 }
 
 void WellVisualization::resizeEvent(QResizeEvent *event)
 {
-    QWidget::resizeEvent(event);
-    if (!m_wellConstruction.casings().isEmpty()) {
-        fitToScreen();
-    }
+    QGraphicsView::resizeEvent(event);
+
+    // Автоматически подстраиваем изображение под новый размер области
+    fitToScreen();
 }
 
-#include "wellvisualization.moc"
+void WellVisualization::rebuildScene()
+{
+    if (!m_scene)
+        return;
+
+    m_scene->clear();
+
+    // Масштаб отображения:
+    // depthScale  - пикселей на 1 метр глубины
+    // diameterScale - пикселей на 1 мм диаметра
+const double depthScale = 8.0;
+
+// Коэффициент расширения по горизонтали.
+// 3.0 - увеличить ширину примерно в 3 раза.
+// Если нужно ещё шире, поставьте 4.0, 5.0 и т.д.
+const double horizontalBoost = 21.0;
+
+const double diameterScale = 0.7 * horizontalBoost;
+
+    double maxDepth = 0.0;
+    double maxHalfWidth = 60.0;
+
+    // Анализируем конструкцию скважины
+    for (const auto &c : m_casings) {
+        if (c.endDepth > maxDepth)
+            maxDepth = c.endDepth;
+
+        double w = c.outerDiameter * diameterScale;
+
+        if (c.isOpenHole) {
+            if (c.cavernosity > 1.0)
+                w *= c.cavernosity;
+        }
+
+        if (w / 2.0 > maxHalfWidth)
+            maxHalfWidth = w / 2.0;
+    }
+
+    // Анализируем компоновку инструмента
+    double layoutDepth = 0.0;
+
+    for (const auto &item : m_layout) {
+        double length = item.length * item.quantity;
+        layoutDepth += length;
+
+        double w = item.tool.outerDiameter() * diameterScale;
+
+        if (w / 2.0 > maxHalfWidth)
+            maxHalfWidth = w / 2.0;
+    }
+
+    if (layoutDepth > maxDepth)
+        maxDepth = layoutDepth;
+
+    if (maxDepth <= 0.0)
+        maxDepth = 100.0;
+
+    double sceneTop = -40.0;
+    double sceneBottom = maxDepth * depthScale + 40.0;
+
+    double sceneLeft = -(maxHalfWidth + 120.0);
+    double sceneRight = maxHalfWidth + 120.0;
+
+    // Общий фон области рисования
+    m_scene->addRect(
+        sceneLeft,
+        sceneTop,
+        sceneRight - sceneLeft,
+        sceneBottom - sceneTop,
+        QPen(Qt::NoPen),
+        QBrush(QColor(250, 250, 250))
+    );
+
+    // Осевая линия
+    m_scene->addLine(
+        0.0,
+        0.0,
+        0.0,
+        maxDepth * depthScale,
+        QPen(QColor(100, 100, 100), 1.0, Qt::DashLine)
+    );
+
+    // Подбор шага глубинных отметок
+    double depthStep = 100.0;
+
+    if (maxDepth <= 100.0)
+        depthStep = 10.0;
+    else if (maxDepth <= 500.0)
+        depthStep = 50.0;
+    else if (maxDepth <= 2000.0)
+        depthStep = 100.0;
+    else if (maxDepth <= 5000.0)
+        depthStep = 500.0;
+    else
+        depthStep = 1000.0;
+
+    QFont smallFont;
+    smallFont.setPointSize(7);
+
+    // Горизонтальные отметки глубины
+    for (double d = 0.0; d <= maxDepth + 1e-6; d += depthStep) {
+        double y = d * depthScale;
+
+        m_scene->addLine(
+            -maxHalfWidth - 20.0,
+            y,
+            maxHalfWidth + 20.0,
+            y,
+            QPen(QColor(210, 210, 210), 1.0)
+        );
+
+        QGraphicsTextItem *textItem = m_scene->addText(QString::number(d, 'f', 0));
+        textItem->setDefaultTextColor(QColor(80, 80, 80));
+        textItem->setFont(smallFont);
+        textItem->setPos(-maxHalfWidth - 90.0, y - 8.0);
+    }
+
+    // Отрисовка конструкции скважины
+    for (const auto &c : m_casings) {
+        double top = c.startDepth * depthScale;
+        double bottom = c.endDepth * depthScale;
+        double height = bottom - top;
+
+        if (height <= 0.0)
+            continue;
+
+        double width = c.outerDiameter * diameterScale;
+
+        if (c.isOpenHole && c.cavernosity > 1.0)
+            width *= c.cavernosity;
+
+        QRectF outerRect(-width / 2.0, top, width, height);
+
+        QColor casingColor;
+
+        if (c.isOpenHole)
+            casingColor = QColor(210, 180, 140, 160);
+        else
+            casingColor = QColor(180, 210, 240, 160);
+
+        m_scene->addRect(
+            outerRect,
+            QPen(QColor(70, 70, 70), 1.2),
+            QBrush(casingColor)
+        );
+
+        // Внутренняя часть обсадной колонны, если это не голый ствол
+        if (!c.isOpenHole && c.innerDiameter > 0.0) {
+            double innerWidth = c.innerDiameter * diameterScale;
+
+            QRectF innerRect(
+                -innerWidth / 2.0,
+                top,
+                innerWidth,
+                height
+            );
+
+            m_scene->addRect(
+                innerRect,
+                QPen(QColor(120, 120, 120), 0.8),
+                QBrush(QColor(255, 255, 255, 140))
+            );
+        }
+    }
+
+    // Отрисовка компоновки инструмента
+    double currentDepth = 0.0;
+
+    for (const auto &item : m_layout) {
+        double length = item.length * item.quantity;
+        double height = length * depthScale;
+
+        if (height <= 0.0)
+            continue;
+
+        double width = item.tool.outerDiameter() * diameterScale * 0.85;
+
+        QRectF toolRect(
+            -width / 2.0,
+            currentDepth,
+            width,
+            height
+        );
+
+        m_scene->addRect(
+            toolRect,
+            QPen(QColor(40, 40, 40), 1.2),
+            QBrush(QColor(150, 170, 190, 190))
+        );
+
+        // Линия между элементами компоновки
+        m_scene->addLine(
+            -width / 2.0,
+            currentDepth + height,
+            width / 2.0,
+            currentDepth + height,
+            QPen(QColor(60, 60, 60), 1.0)
+        );
+
+        currentDepth += height;
+    }
+
+    m_scene->setSceneRect(
+        sceneLeft,
+        sceneTop,
+        sceneRight - sceneLeft,
+        sceneBottom - sceneTop
+    );
+
+    // Первоначальное вписывание изображения
+    if (m_needInitialFit) {
+        fitToScreen();
+        m_needInitialFit = false;
+    } else {
+        if (viewport())
+            viewport()->update();
+    }
+}
