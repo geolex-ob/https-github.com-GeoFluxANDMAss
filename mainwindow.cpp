@@ -21,6 +21,7 @@
 #include <QDir>
 #include <QSettings>
 #include <QTimer>
+#include <QEvent>
 #include <algorithm>
 
 MainWindow::MainWindow(QWidget *parent)
@@ -57,6 +58,14 @@ MainWindow::MainWindow(QWidget *parent)
 
     refreshLayoutTable();
     updateVisualization();
+
+    // Первоначально вписать графическое изображение во всю доступную область
+    QTimer::singleShot(0, this, [this]() {
+        if (m_visualization) {
+            m_visualization->fitToScreen();
+            m_visualization->update();
+        }
+    });
 }
 
 MainWindow::~MainWindow()
@@ -311,7 +320,11 @@ void MainWindow::createWellTab()
 
     QWidget *rightWidget = new QWidget();
     QVBoxLayout *rightLayout = new QVBoxLayout(rightWidget);
-    rightLayout->setContentsMargins(5, 0, 0, 0);
+
+    // Убираем лишние отступы, чтобы изображение занимало всю область
+    rightLayout->setContentsMargins(0, 0, 0, 0);
+
+    rightWidget->setMinimumSize(0, 0);
 
     QHBoxLayout *zoomLayout = new QHBoxLayout();
     QPushButton *zoomInBtn = new QPushButton("+");
@@ -327,7 +340,13 @@ void MainWindow::createWellTab()
     zoomLayout->addStretch();
 
     m_visualization = new WellVisualization();
-    m_visualization->setMinimumSize(400, 400);
+
+    // Разрешаем виджету свободно растягиваться
+    m_visualization->setMinimumSize(0, 0);
+    m_visualization->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+
+    // Следим за изменением размера, чтобы автоматически подстраивать изображение
+    m_visualization->installEventFilter(this);
 
     rightLayout->addLayout(zoomLayout);
     rightLayout->addWidget(m_visualization);
@@ -335,9 +354,14 @@ void MainWindow::createWellTab()
     QSplitter *splitter = new QSplitter(Qt::Horizontal);
     splitter->addWidget(leftWidget);
     splitter->addWidget(rightWidget);
-    splitter->setStretchFactor(0, 2);
-    splitter->setStretchFactor(1, 3);
-    splitter->setSizes({400, 600});
+
+    // Запрещаем случайно полностью сворачивать панели
+    splitter->setChildrenCollapsible(false);
+
+    // Правая часть с графикой получает больше пространства
+    splitter->setStretchFactor(0, 1);
+    splitter->setStretchFactor(1, 4);
+    splitter->setSizes({450, 900});
 
     mainLayout->addWidget(splitter);
 
@@ -1184,6 +1208,26 @@ void MainWindow::onAbout()
         "- расчет циркуляции;<br>"
         "- конструкция скважины;<br>"
         "- визуализация компоновки и скважины.<br><br>"
-        "Версия: 0.0.0.2"
+        "Версия: 0.0.0.3"
     );
+}
+
+bool MainWindow::eventFilter(QObject *obj, QEvent *event)
+{
+    if (obj == m_visualization && event->type() == QEvent::Resize) {
+        if (!m_visualFitScheduled) {
+            m_visualFitScheduled = true;
+
+            QTimer::singleShot(0, this, [this]() {
+                m_visualFitScheduled = false;
+
+                if (m_visualization) {
+                    m_visualization->fitToScreen();
+                    m_visualization->update();
+                }
+            });
+        }
+    }
+
+    return QMainWindow::eventFilter(obj, event);
 }

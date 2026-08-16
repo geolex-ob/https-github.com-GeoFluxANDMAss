@@ -28,6 +28,9 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+protected:
+    bool eventFilter(QObject *obj, QEvent *event) override;
+
 private slots:
     void onAddTool();
     void onRemoveTool();
@@ -80,6 +83,7 @@ private:
 
     bool m_updatingLayout = false;
     bool m_updatingWell = false;
+    bool m_visualFitScheduled = false;
 
     QTableView *m_toolTable;
     ToolModel *m_toolModel;
