@@ -36,25 +36,20 @@ private slots:
     void onRemoveTool();
     void onCalculateVolume();
     void onTableCellChanged();
-
     void onAddToLayout();
     void onRemoveFromLayout();
     void onMoveLayoutUp();
     void onMoveLayoutDown();
-
     void onAddCasing();
     void onRemoveCasing();
     void onMoveCasingUp();
     void onMoveCasingDown();
     void onCalculateCirculation();
-
     void onSaveLayout();
     void onLoadLayout();
     void onSaveWell();
     void onLoadWell();
-
     void onAbout();
-
     void autoSaveAll();
 
 private:
@@ -63,64 +58,56 @@ private:
     void createLayoutTab();
     void createWellTab();
     void createMenuBar();
-
     void applySettings();
     void saveSettings();
     void updateVisualization();
     void refreshLayoutTable();
-
     QVector<double> cumulativeLayoutLength() const;
-
     void saveLayoutToCSV(const QString &filename);
     void loadLayoutFromCSV(const QString &filename, bool autoSave = true);
-
     void saveWellToCSV(const QString &filename);
     void loadWellFromCSV(const QString &filename, bool autoSave = true);
-
     void recalculateCirculation(bool autoSave);
-
     QString dataPath() const;
 
     bool m_updatingLayout = false;
     bool m_updatingWell = false;
     bool m_visualFitScheduled = false;
 
-    QTableView *m_toolTable;
-    ToolModel *m_toolModel;
-    QPushButton *m_addToolBtn;
-    QPushButton *m_removeToolBtn;
-    QPushButton *m_calcVolumeBtn;
+    QTableView *m_toolTable = nullptr;
+    ToolModel *m_toolModel = nullptr;
+    QPushButton *m_addToolBtn = nullptr;
+    QPushButton *m_removeToolBtn = nullptr;
+    QPushButton *m_calcVolumeBtn = nullptr;
 
-    QTableView *m_layoutTable;
-    QStandardItemModel *m_layoutModel;
-    QPushButton *m_addToLayoutBtn;
-    QPushButton *m_removeFromLayoutBtn;
-    QPushButton *m_moveLayoutUpBtn;
-    QPushButton *m_moveLayoutDownBtn;
-    QDoubleSpinBox *m_fluidDensitySpin;
-    QLabel *m_totalWeightAirLabel;
-    QLabel *m_totalWeightFluidLabel;
-    QLabel *m_totalVolumeLabel;
+    QTableView *m_layoutTable = nullptr;
+    QStandardItemModel *m_layoutModel = nullptr;
+    QPushButton *m_addToLayoutBtn = nullptr;
+    QPushButton *m_removeFromLayoutBtn = nullptr;
+    QPushButton *m_moveLayoutUpBtn = nullptr;
+    QPushButton *m_moveLayoutDownBtn = nullptr;
+    QDoubleSpinBox *m_fluidDensitySpin = nullptr;
+    QLabel *m_totalWeightAirLabel = nullptr;
+    QLabel *m_totalWeightFluidLabel = nullptr;
+    QLabel *m_totalVolumeLabel = nullptr;
 
-    QTableView *m_wellTable;
-    QStandardItemModel *m_wellModel;
-    QPushButton *m_addCasingBtn;
-    QPushButton *m_removeCasingBtn;
-    QPushButton *m_moveCasingUpBtn;
-    QPushButton *m_moveCasingDownBtn;
-    QDoubleSpinBox *m_flowRateSpin;
-    QLabel *m_circulationTimeLabel;
-    QLabel *m_bottomUpTimeLabel;
-    QLabel *m_surfaceToBottomTimeLabel;
-    QLabel *m_wellVolumeLabel;
-    WellVisualization *m_visualization;
+    QTableView *m_wellTable = nullptr;
+    QStandardItemModel *m_wellModel = nullptr;
+    QPushButton *m_addCasingBtn = nullptr;
+    QPushButton *m_removeCasingBtn = nullptr;
+    QPushButton *m_moveCasingUpBtn = nullptr;
+    QPushButton *m_moveCasingDownBtn = nullptr;
+    QDoubleSpinBox *m_flowRateSpin = nullptr;
+    QLabel *m_circulationTimeLabel = nullptr;
+    QLabel *m_bottomUpTimeLabel = nullptr;
+    QLabel *m_surfaceToBottomTimeLabel = nullptr;
+    QLabel *m_wellVolumeLabel = nullptr;
 
-    QTabWidget *m_tabWidget;
-
+    WellVisualization *m_visualization = nullptr;
+    QTabWidget *m_tabWidget = nullptr;
     CirculationCalculator m_calculator;
     WellConstruction m_wellConstruction;
     QVector<LayoutItem> m_layoutItems;
-
     QString m_dataPath;
 };
 

@@ -39,11 +39,11 @@ public:
 
 private:
     QString m_name;
-    double m_outerDiameter;   // мм
-    double m_innerDiameter;   // мм
-    double m_weightPerMeter;  // кг/м
-    double m_volumePerMeter;  // м³/м
-    double m_density;         // кг/м³
+    double m_outerDiameter = 0.0;    // мм
+    double m_innerDiameter = 0.0;    // мм
+    double m_weightPerMeter = 0.0;   // кг/м
+    double m_volumePerMeter = 0.0;   // м³/м
+    double m_density = 7850.0;       // кг/м³
 };
 
 #endif // TOOL_H

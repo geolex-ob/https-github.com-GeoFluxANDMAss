@@ -9,12 +9,12 @@
 // Обсадная колонна или голый ствол
 struct Casing {
     QString name;
-    double startDepth;     // м
-    double endDepth;       // м
-    double outerDiameter;  // мм (для голого ствола - диаметр долота)
-    double innerDiameter;  // мм (для голого ствола игнорируется)
-    bool isOpenHole = false;  // голый ствол
-    double cavernosity = 1.0; // коэффициент кавернозности (только для голого ствола)
+    double startDepth = 0.0;      // м
+    double endDepth = 0.0;        // м
+    double outerDiameter = 0.0;   // мм (для голого ствола - диаметр долота)
+    double innerDiameter = 0.0;   // мм (для голого ствола игнорируется)
+    bool isOpenHole = false;      // голый ствол
+    double cavernosity = 1.0;     // коэффициент кавернозности (только для голого ствола)
 
     QJsonObject toJson() const;
     static Casing fromJson(const QJsonObject &json);

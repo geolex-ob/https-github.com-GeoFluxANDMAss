@@ -3,7 +3,7 @@
 
 #include <QGraphicsView>
 #include <QVector>
-
+#include <QTimer>
 #include "wellconstruction.h"
 #include "circulation.h"
 
@@ -30,22 +30,21 @@ protected:
 
 private:
     struct CasingItem {
-        double startDepth;
-        double endDepth;
-        double outerDiameter;
-        double innerDiameter;
-        double cavernosity;
-        bool isOpenHole;
+        double startDepth = 0.0;
+        double endDepth = 0.0;
+        double outerDiameter = 0.0;
+        double innerDiameter = 0.0;
+        double cavernosity = 1.0;
+        bool isOpenHole = false;
     };
 
     void rebuildScene();
 
     QGraphicsScene *m_scene = nullptr;
-
     QVector<CasingItem> m_casings;
     QVector<LayoutItem> m_layout;
-
     bool m_needInitialFit = true;
+    QTimer *m_resizeTimer = nullptr;
 };
 
 #endif // WELLVISUALIZATION_H
