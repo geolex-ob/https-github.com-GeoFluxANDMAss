@@ -36,7 +36,14 @@ QVariant ToolModel::data(const QModelIndex &index, int role) const
         case WeightPerMeter: return tool.weightPerMeter();
         case VolumePerMeter: return tool.volumePerMeter();
         case Density: return tool.density();
+        case CalcMethod:
+            return (tool.volumeCalcMethod() == Tool::ByDimensions) 
+                   ? "По размерам" : "По плотности";
         }
+    }
+
+    if (role == Qt::UserRole && index.column() == CalcMethod) {
+        return static_cast<int>(tool.volumeCalcMethod());
     }
 
     if (role == Qt::TextAlignmentRole)
@@ -55,6 +62,7 @@ QVariant ToolModel::headerData(int section, Qt::Orientation orientation, int rol
         case WeightPerMeter: return "Вес, кг/м";
         case VolumePerMeter: return "Объем, м³/м";
         case Density: return "Плотность, кг/м³";
+        case CalcMethod: return "Расчет объема";
         }
     }
     return QVariant();
@@ -98,11 +106,31 @@ bool ToolModel::setData(const QModelIndex &index, const QVariant &value, int rol
         if (!ok || d < 0) return false;
         tool.setDensity(d);
         break;
+    case CalcMethod:
+        tool.setVolumeCalcMethod(static_cast<Tool::VolumeCalcMethod>(value.toInt()));
+        break;
     default:
         return false;
     }
 
     emit dataChanged(index, index, {role});
+
+    // Автоматический пересчет объема при изменении зависимых параметров или метода расчета
+    if (index.column() != VolumePerMeter) {
+        double newVol = 0.0;
+        if (tool.volumeCalcMethod() == Tool::ByDensity) {
+            if (tool.density() > 0.0) newVol = tool.calculateVolumeFromWeight();
+        } else {
+            newVol = tool.calculateVolumeFromDimensions();
+        }
+
+        if (tool.volumePerMeter() != newVol) {
+            tool.setVolumePerMeter(newVol);
+            QModelIndex volIdx = this->index(index.row(), VolumePerMeter);
+            emit dataChanged(volIdx, volIdx, {Qt::DisplayRole, Qt::EditRole});
+        }
+    }
+
     return true;
 }
 

@@ -7,6 +7,7 @@ Tool::Tool()
     , m_weightPerMeter(0.0)
     , m_volumePerMeter(0.0)
     , m_density(7850.0)
+    , m_calcMethod(ByDensity)
 {
 }
 
@@ -18,15 +19,23 @@ Tool::Tool(const QString &name, double outerDiameter, double innerDiameter,
     , m_weightPerMeter(weightPerMeter)
     , m_volumePerMeter(volumePerMeter)
     , m_density(density)
+    , m_calcMethod(ByDensity)
 {
 }
 
 double Tool::calculateVolumeFromWeight() const
 {
     // V = m / ρ  (объем на метр = вес погонного метра / плотность)
-    // Переводим кг в м³: (кг/м) / (кг/м³) = м³/м
     if (m_density <= 0.0) return 0.0;
     return m_weightPerMeter / m_density;
+}
+
+double Tool::calculateVolumeFromDimensions() const
+{
+    // Объем на 1 метр длины = площадь поперечного сечения (в м²)
+    double outerM = m_outerDiameter / 1000.0;
+    double innerM = m_innerDiameter / 1000.0;
+    return M_PI / 4.0 * (outerM * outerM - innerM * innerM);
 }
 
 double Tool::calculateWeightFromDimensions() const
@@ -47,6 +56,7 @@ QJsonObject Tool::toJson() const
     obj["weightPerMeter"] = m_weightPerMeter;
     obj["volumePerMeter"] = m_volumePerMeter;
     obj["density"] = m_density;
+    obj["calcMethod"] = static_cast<int>(m_calcMethod);
     return obj;
 }
 
@@ -59,5 +69,6 @@ Tool Tool::fromJson(const QJsonObject &json)
     tool.m_weightPerMeter = json["weightPerMeter"].toDouble();
     tool.m_volumePerMeter = json["volumePerMeter"].toDouble();
     tool.m_density = json["density"].toDouble(7850.0);
+    tool.m_calcMethod = static_cast<VolumeCalcMethod>(json["calcMethod"].toInt(0));
     return tool;
 }
