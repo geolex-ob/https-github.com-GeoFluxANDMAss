@@ -3,6 +3,7 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QColor>
+#include <cmath>
 
 ToolModel::ToolModel(QObject *parent)
     : QAbstractTableModel(parent)
@@ -11,13 +12,17 @@ ToolModel::ToolModel(QObject *parent)
 
 int ToolModel::rowCount(const QModelIndex &parent) const
 {
-    if (parent.isValid()) return 0;
+    if (parent.isValid())
+        return 0;
+
     return m_tools.size();
 }
 
 int ToolModel::columnCount(const QModelIndex &parent) const
 {
-    if (parent.isValid()) return 0;
+    if (parent.isValid())
+        return 0;
+
     return ColumnCount;
 }
 
@@ -30,15 +35,37 @@ QVariant ToolModel::data(const QModelIndex &index, int role) const
 
     if (role == Qt::DisplayRole || role == Qt::EditRole) {
         switch (index.column()) {
-        case Name: return tool.name();
-        case OuterDiameter: return tool.outerDiameter();
-        case InnerDiameter: return tool.innerDiameter();
-        case WeightPerMeter: return tool.weightPerMeter();
-        case VolumePerMeter: return tool.volumePerMeter();
-        case Density: return tool.density();
+        case Name:
+            return tool.name();
+
+        case OuterDiameter:
+            return tool.outerDiameter();
+
+        case InnerDiameter:
+            return tool.innerDiameter();
+
+        case WeightPerMeter:
+            return tool.weightPerMeter();
+
+        case VolumePerMeter:
+            // Для отображения показываем больше знаков,
+            // но для редактирования отдаем число.
+            if (role == Qt::DisplayRole)
+                return QString::number(tool.volumePerMeter(), 'f', 8);
+            return tool.volumePerMeter();
+
+        case Density:
+            return tool.density();
+
+        case GeometricFactor:
+            if (role == Qt::DisplayRole)
+                return QString::number(tool.geometricFactor(), 'f', 4);
+            return tool.geometricFactor();
+
         case CalcMethod:
-            return (tool.volumeCalcMethod() == Tool::ByDimensions) 
-                   ? "По размерам" : "По плотности";
+            return (tool.volumeCalcMethod() == Tool::ByDimensions)
+                   ? "По размерам"
+                   : "По плотности";
         }
     }
 
@@ -56,15 +83,25 @@ QVariant ToolModel::headerData(int section, Qt::Orientation orientation, int rol
 {
     if (orientation == Qt::Horizontal && role == Qt::DisplayRole) {
         switch (section) {
-        case Name: return "Название";
-        case OuterDiameter: return "D наруж, мм";
-        case InnerDiameter: return "D внутр, мм";
-        case WeightPerMeter: return "Вес, кг/м";
-        case VolumePerMeter: return "Объем, м³/м";
-        case Density: return "Плотность, кг/м³";
-        case CalcMethod: return "Расчет объема";
+        case Name:
+            return "Название";
+        case OuterDiameter:
+            return "D наруж, мм";
+        case InnerDiameter:
+            return "D внутр, мм";
+        case WeightPerMeter:
+            return "Вес, кг/м";
+        case VolumePerMeter:
+            return "Объем, м³/м";
+        case Density:
+            return "Плотность, кг/м³";
+        case GeometricFactor:
+            return "Коэф. геометрии";
+        case CalcMethod:
+            return "Расчет объема";
         }
     }
+
     return QVariant();
 }
 
@@ -74,60 +111,94 @@ bool ToolModel::setData(const QModelIndex &index, const QVariant &value, int rol
         return false;
 
     Tool &tool = m_tools[index.row()];
-    bool ok;
-    double d;
+
+    bool ok = false;
+    double d = 0.0;
 
     switch (index.column()) {
     case Name:
         tool.setName(value.toString());
         break;
+
     case OuterDiameter:
         d = value.toDouble(&ok);
-        if (!ok || d < 0) return false;
+        if (!ok || d < 0.0)
+            return false;
         tool.setOuterDiameter(d);
         break;
+
     case InnerDiameter:
         d = value.toDouble(&ok);
-        if (!ok || d < 0) return false;
+        if (!ok || d < 0.0)
+            return false;
         tool.setInnerDiameter(d);
         break;
+
     case WeightPerMeter:
         d = value.toDouble(&ok);
-        if (!ok || d < 0) return false;
+        if (!ok || d < 0.0)
+            return false;
         tool.setWeightPerMeter(d);
         break;
+
     case VolumePerMeter:
         d = value.toDouble(&ok);
-        if (!ok || d < 0) return false;
+        if (!ok || d < 0.0)
+            return false;
         tool.setVolumePerMeter(d);
         break;
+
     case Density:
         d = value.toDouble(&ok);
-        if (!ok || d < 0) return false;
+        if (!ok || d < 0.0)
+            return false;
         tool.setDensity(d);
         break;
+
+    case GeometricFactor:
+        d = value.toDouble(&ok);
+        if (!ok || d <= 0.0)
+            return false;
+        tool.setGeometricFactor(d);
+        break;
+
     case CalcMethod:
         tool.setVolumeCalcMethod(static_cast<Tool::VolumeCalcMethod>(value.toInt()));
         break;
+
     default:
         return false;
     }
 
     emit dataChanged(index, index, {role});
 
-    // Автоматический пересчет объема при изменении зависимых параметров или метода расчета
+    // Автоматический пересчет объема.
+    //
+    // Если пользователь меняет диаметр, вес, плотность,
+    // коэффициент геометрии или способ расчета,
+    // объем пересчитывается автоматически.
+    //
+    // Если пользователь вручную меняет именно колонку VolumePerMeter,
+    // его ручной ввод не перезаписывается.
+
     if (index.column() != VolumePerMeter) {
-        double newVol = 0.0;
+        double newVolume = 0.0;
+
         if (tool.volumeCalcMethod() == Tool::ByDensity) {
-            if (tool.density() > 0.0) newVol = tool.calculateVolumeFromWeight();
+            if (tool.density() > 0.0)
+                newVolume = tool.calculateVolumeFromWeight();
         } else {
-            newVol = tool.calculateVolumeFromDimensions();
+            newVolume = tool.calculateVolumeFromDimensions();
         }
 
-        if (tool.volumePerMeter() != newVol) {
-            tool.setVolumePerMeter(newVol);
-            QModelIndex volIdx = this->index(index.row(), VolumePerMeter);
-            emit dataChanged(volIdx, volIdx, {Qt::DisplayRole, Qt::EditRole});
+        const double epsilon = 1e-12;
+
+        if (std::fabs(tool.volumePerMeter() - newVolume) > epsilon) {
+            tool.setVolumePerMeter(newVolume);
+
+            QModelIndex volumeIndex = this->index(index.row(), VolumePerMeter);
+            emit dataChanged(volumeIndex, volumeIndex,
+                             {Qt::DisplayRole, Qt::EditRole});
         }
     }
 
@@ -138,6 +209,7 @@ Qt::ItemFlags ToolModel::flags(const QModelIndex &index) const
 {
     if (!index.isValid())
         return Qt::NoItemFlags;
+
     return Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsEditable;
 }
 
@@ -150,7 +222,9 @@ void ToolModel::addTool(const Tool &tool)
 
 void ToolModel::removeTool(int row)
 {
-    if (row < 0 || row >= m_tools.size()) return;
+    if (row < 0 || row >= m_tools.size())
+        return;
+
     beginRemoveRows(QModelIndex(), row, row);
     m_tools.removeAt(row);
     endRemoveRows();
@@ -158,7 +232,9 @@ void ToolModel::removeTool(int row)
 
 Tool ToolModel::toolAt(int row) const
 {
-    if (row < 0 || row >= m_tools.size()) return Tool();
+    if (row < 0 || row >= m_tools.size())
+        return Tool();
+
     return m_tools.at(row);
 }
 
@@ -172,6 +248,7 @@ void ToolModel::setTools(const QVector<Tool> &tools)
 void ToolModel::saveToFile(const QString &filename)
 {
     QJsonArray arr;
+
     for (const auto &t : m_tools)
         arr.append(t.toJson());
 
@@ -185,15 +262,19 @@ void ToolModel::saveToFile(const QString &filename)
 void ToolModel::loadFromFile(const QString &filename)
 {
     QFile file(filename);
+
     if (file.open(QIODevice::ReadOnly)) {
         QByteArray data = file.readAll();
         file.close();
+
         QJsonDocument doc = QJsonDocument::fromJson(data);
         QJsonArray arr = doc.array();
 
         QVector<Tool> tools;
+
         for (const auto &val : arr)
             tools.append(Tool::fromJson(val.toObject()));
+
         setTools(tools);
     }
 }

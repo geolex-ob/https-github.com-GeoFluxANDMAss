@@ -53,7 +53,6 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(m_toolModel, &QAbstractItemModel::dataChanged, this, &MainWindow::onTableCellChanged);
     
-    // Обновляем таблицы после загрузки
     refreshLayoutTable();
     updateVisualization();
 }
@@ -89,7 +88,6 @@ void MainWindow::createToolTab()
     m_toolTable->setSelectionMode(QAbstractItemView::SingleSelection);
     m_toolTable->horizontalHeader()->setStretchLastSection(true);
 
-    // Подключаем делегат с выпадающим списком для колонки "Расчет объема"
     ToolCalcMethodDelegate *calcMethodDelegate = new ToolCalcMethodDelegate(this);
     m_toolTable->setItemDelegateForColumn(ToolModel::CalcMethod, calcMethodDelegate);
 
@@ -121,8 +119,9 @@ void MainWindow::createLayoutTab()
     m_layoutTable = new QTableView();
     m_layoutModel->setHorizontalHeaderLabels({
         "Название", "D наруж, мм", "D внутр, мм", "Вес, кг/м",
-        "Длина, м", "Объем, м³", "Вес в возд, т", "Вес в жидк, т",
-        "Сум. объем, м³", "Сум. вес возд, т", "Сум. вес жидк, т"
+        "Длина, м", "Объем внутр, м³", "Объем металла, м³", 
+        "Вес в возд, т", "Вес в жидк, т",
+        "Сум. объем внутр, м³", "Сум. вес возд, т", "Сум. вес жидк, т"
     });
     m_layoutTable->setModel(m_layoutModel);
     m_layoutTable->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -153,7 +152,7 @@ void MainWindow::createLayoutTab()
     QHBoxLayout *totalLayout = new QHBoxLayout();
     m_totalWeightAirLabel = new QLabel("Вес в воздухе: 0.000 т");
     m_totalWeightFluidLabel = new QLabel("Вес в жидкости: 0.000 т");
-    m_totalVolumeLabel = new QLabel("Объем: 0.000 м³");
+    m_totalVolumeLabel = new QLabel("Объем внутр: 0.000 м³ | Металл: 0.000 м³");
     totalLayout->addWidget(m_totalWeightAirLabel);
     totalLayout->addWidget(m_totalWeightFluidLabel);
     totalLayout->addWidget(m_totalVolumeLabel);
@@ -398,7 +397,11 @@ void MainWindow::refreshLayoutTable()
         row.append(makeItem(QString::number(item.tool.innerDiameter(), 'f', 2), false));
         row.append(makeItem(QString::number(item.tool.weightPerMeter(), 'f', 3), false));
         row.append(makeItem(QString::number(item.length, 'f', 3), true));
-        row.append(makeItem(QString::number(item.volumeInner(), 'f', 4), false));
+        
+        // Две колонки объема: внутренний (емкость) и металл
+        row.append(makeItem(QString::number(item.volumeCapacity(), 'f', 4), false));
+        row.append(makeItem(QString::number(item.volumeMetal(), 'f', 4), false));
+        
         row.append(makeItem(QString::number(item.weightInAir(), 'f', 4), false));
         row.append(makeItem(QString::number(item.weightInFluid(m_fluidDensitySpin->value()), 'f', 4), false));
         
@@ -413,13 +416,17 @@ void MainWindow::refreshLayoutTable()
         .arg(m_calculator.totalWeightInAir(), 0, 'f', 3));
     m_totalWeightFluidLabel->setText(QString("Вес в жидкости: %1 т")
         .arg(m_calculator.totalWeightInFluid(), 0, 'f', 3));
-    double totalVol = 0;
-    for (const auto &item : m_layoutItems)
-        totalVol += item.volumeInner();
-    m_totalVolumeLabel->setText(QString("Объем: %1 м³").arg(totalVol, 0, 'f', 4));
+        
+    double totalInnerVol = 0;
+    double totalMetalVol = 0;
+    for (const auto &item : m_layoutItems) {
+        totalInnerVol += item.volumeCapacity();
+        totalMetalVol += item.volumeMetal();
+    }
+    m_totalVolumeLabel->setText(QString("Объем внутр: %1 м³ | Металл: %2 м³")
+        .arg(totalInnerVol, 0, 'f', 4)
+        .arg(totalMetalVol, 0, 'f', 4));
 }
-
-// --- CSV сохранение/загрузка ---
 
 void MainWindow::saveLayoutToCSV(const QString &filename)
 {
@@ -430,7 +437,7 @@ void MainWindow::saveLayoutToCSV(const QString &filename)
     }
     
     QTextStream stream(&file);
-    stream << "Название;D_наруж_мм;D_внутр_мм;Вес_кг_м;Длина_м;Объем_м3;Вес_возд_т;Вес_жидк_т;Сум_объем_м3;Сум_вес_возд_т;Сум_вес_жидк_т;Плотность_жидк_кг_м3\n";
+    stream << "Название;D_наруж_мм;D_внутр_мм;Вес_кг_м;Длина_м;Объем_внутр_м3;Объем_металла_м3;Вес_возд_т;Вес_жидк_т;Сум_объем_внутр_м3;Сум_вес_возд_т;Сум_вес_жидк_т;Плотность_жидк_кг_м3\n";
     
     m_calculator.setLayout(m_layoutItems);
     m_calculator.setFluidDensity(m_fluidDensitySpin->value());
@@ -445,7 +452,8 @@ void MainWindow::saveLayoutToCSV(const QString &filename)
                << QString::number(item.tool.innerDiameter(), 'f', 2) << ";"
                << QString::number(item.tool.weightPerMeter(), 'f', 3) << ";"
                << QString::number(item.length, 'f', 3) << ";"
-               << QString::number(item.volumeInner(), 'f', 4) << ";"
+               << QString::number(item.volumeCapacity(), 'f', 4) << ";"
+               << QString::number(item.volumeMetal(), 'f', 4) << ";"
                << QString::number(item.weightInAir(), 'f', 4) << ";"
                << QString::number(item.weightInFluid(m_fluidDensitySpin->value()), 'f', 4) << ";"
                << (i < cumVol.size() ? QString::number(cumVol[i], 'f', 4) : "") << ";"
@@ -477,7 +485,7 @@ void MainWindow::loadLayoutFromCSV(const QString &filename, bool autoSave)
         if (line.isEmpty()) continue;
         
         QStringList fields = line.split(';');
-        if (fields.size() < 12) continue;
+        if (fields.size() < 13) continue;
         
         LayoutItem item;
         item.tool.setName(fields[0]);
@@ -488,8 +496,8 @@ void MainWindow::loadLayoutFromCSV(const QString &filename, bool autoSave)
         
         m_layoutItems.append(item);
         
-        if (fields.size() > 11) {
-            fluidDensity = fields[11].toDouble();
+        if (fields.size() > 12) {
+            fluidDensity = fields[12].toDouble();
         }
     }
     
@@ -570,8 +578,6 @@ void MainWindow::loadWellFromCSV(const QString &filename, bool autoSave)
     if (autoSave) autoSaveAll();
 }
 
-// --- Основные слоты ---
-
 void MainWindow::onAddTool()
 {
     Tool tool;
@@ -582,6 +588,7 @@ void MainWindow::onAddTool()
     tool.setVolumePerMeter(0.0);
     tool.setDensity(7850.0);
     tool.setVolumeCalcMethod(Tool::ByDensity);
+    tool.setGeometricFactor(1.0);
     m_toolModel->addTool(tool);
     m_toolModel->saveToFile(m_dataPath + "/tools.dat");
 }
@@ -853,19 +860,14 @@ void MainWindow::onLoadWell()
     QMessageBox::information(this, "Загрузка", "Конструкция скважины загружена из " + filename);
 }
 
-// --- ДОБАВЛЕННЫЕ ФУНКЦИИ ДЛЯ ИСПРАВЛЕНИЯ ОШИБКИ ЛИНКОВКИ ---
-
 void MainWindow::onAbout()
 {
     QMessageBox::about(this, "О программе", 
                        "Программа по расчету инструмента в жидкости.\n"
-                       "Версия: 0.0.0.6");
+                       "Версия: 0.0.0.7");
 }
 
 bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 {
-    // Базовая реализация фильтра событий. 
-    // Если вы планировали обрабатывать нажатия клавиш (например, Delete), 
-    // добавьте соответствующую логику здесь перед вызовом базового класса.
     return QMainWindow::eventFilter(obj, event);
 }

@@ -7,12 +7,19 @@
 
 struct LayoutItem {
     Tool tool;
-    double length = 1.0;   // м
+    double length;         // м
     int quantity = 1;
 
-    double volumeInner() const;                    // внутренний объем элемента, м³
-    double volumeOuter() const;                    // наружный объем элемента, м³
-    double weightInAir() const;                    // вес в воздухе, тонн
+    // Внутренний объем (емкость) — объем раствора внутри инструмента
+    double volumeCapacity() const;
+    
+    // Наружный объем (вытеснение) — объем, занимаемый инструментом в скважине
+    double volumeDisplacement() const;
+    
+    // Объем металла — объем стали (внешний минус внутренний)
+    double volumeMetal() const;
+    
+    double weightInAir() const;    // вес в воздухе, тонн
     double weightInFluid(double fluidDensity) const; // вес в жидкости, тонн
 };
 
@@ -31,16 +38,16 @@ public:
 
     // Расчет времени подъема жидкости от забоя до устья (минут)
     double calculateBottomUpTime() const;
-
+    
     // Расчет времени от устья до забоя (минут)
     double calculateSurfaceToBottomTime() const;
 
     // Полный объем скважины с учетом инструмента (м³)
     double totalWellVolume() const;
-
+    
     // Объем затрубного пространства (м³)
     double annulusVolume() const;
-
+    
     // Внутренний объем инструмента (м³)
     double toolInnerVolume() const;
 
@@ -61,8 +68,8 @@ public:
 private:
     QVector<LayoutItem> m_layout;
     WellConstruction m_wellConstruction;
-    double m_fluidDensity = 1200.0;   // кг/м³
-    double m_flowRateLps = 30.0;      // л/с
+    double m_fluidDensity = 1200.0; // кг/м³
+    double m_flowRateLps = 30.0;   // л/с
 };
 
 #endif // CIRCULATION_H
