@@ -7,6 +7,8 @@
 class Tool
 {
 public:
+    enum VolumeCalcMethod { ByDensity = 0, ByDimensions = 1 };
+
     Tool();
     Tool(const QString &name, double outerDiameter, double innerDiameter,
          double weightPerMeter, double volumePerMeter, double density = 7850.0);
@@ -18,6 +20,7 @@ public:
     double weightPerMeter() const { return m_weightPerMeter; }
     double volumePerMeter() const { return m_volumePerMeter; }
     double density() const { return m_density; }
+    VolumeCalcMethod volumeCalcMethod() const { return m_calcMethod; }
 
     // Сеттеры
     void setName(const QString &name) { m_name = name; }
@@ -26,11 +29,11 @@ public:
     void setWeightPerMeter(double w) { m_weightPerMeter = w; }
     void setVolumePerMeter(double v) { m_volumePerMeter = v; }
     void setDensity(double d) { m_density = d; }
+    void setVolumeCalcMethod(VolumeCalcMethod m) { m_calcMethod = m; }
 
-    // Расчет объема по весу погонного метра и плотности (в м³/м)
+    // Расчеты
     double calculateVolumeFromWeight() const;
-
-    // Расчет веса погонного метра по размерам и плотности
+    double calculateVolumeFromDimensions() const;
     double calculateWeightFromDimensions() const;
 
     // Сериализация
@@ -39,11 +42,12 @@ public:
 
 private:
     QString m_name;
-    double m_outerDiameter = 0.0;    // мм
-    double m_innerDiameter = 0.0;    // мм
-    double m_weightPerMeter = 0.0;   // кг/м
-    double m_volumePerMeter = 0.0;   // м³/м
-    double m_density = 7850.0;       // кг/м³
+    double m_outerDiameter;   // мм
+    double m_innerDiameter;   // мм
+    double m_weightPerMeter;  // кг/м
+    double m_volumePerMeter;  // м³/м
+    double m_density;         // кг/м³
+    VolumeCalcMethod m_calcMethod;
 };
 
 #endif // TOOL_H
