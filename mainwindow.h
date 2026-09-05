@@ -20,6 +20,8 @@
 #include "wellconstruction.h"
 #include "wellvisualization.h"
 
+class QCloseEvent;
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -109,6 +111,15 @@ private:
     WellConstruction m_wellConstruction;
     QVector<LayoutItem> m_layoutItems;
     QString m_dataPath;
+
+    // TODAY_FIX_DECLARATIONS_BEGIN
+    protected:
+        void closeEvent(QCloseEvent *event) override;
+
+    private:
+        void saveWellConstructionToSettings();
+        void loadWellConstructionFromSettings();
+    // TODAY_FIX_DECLARATIONS_END
 };
 
 #endif // MAINWINDOW_H

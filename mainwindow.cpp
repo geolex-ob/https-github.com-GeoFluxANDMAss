@@ -21,6 +21,10 @@
 #include <QEvent>
 
 #include "tooldelegate.h"
+#include <QSettings>
+#include <QCloseEvent>
+#include <QCoreApplication>
+#include <QList>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -38,6 +42,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupUI();
     createMenuBar();
     applySettings();
+    loadWellConstructionFromSettings();
 
     QString toolsFile = m_dataPath + "/tools.dat";
     if (QFile::exists(toolsFile))
@@ -258,24 +263,11 @@ void MainWindow::createWellTab()
     QVBoxLayout *rightLayout = new QVBoxLayout(rightWidget);
     rightLayout->setContentsMargins(5, 0, 0, 0);
 
-    QHBoxLayout *zoomLayout = new QHBoxLayout();
-    QPushButton *zoomInBtn = new QPushButton("+");
-    zoomInBtn->setFixedWidth(30);
-    QPushButton *zoomOutBtn = new QPushButton("-");
-    zoomOutBtn->setFixedWidth(30);
-    QPushButton *fitBtn = new QPushButton("По размеру");
-    
-    zoomLayout->addWidget(new QLabel("Масштаб:"));
-    zoomLayout->addWidget(zoomInBtn);
-    zoomLayout->addWidget(zoomOutBtn);
-    zoomLayout->addWidget(fitBtn);
-    zoomLayout->addStretch();
 
     m_visualization = new WellVisualization();
     m_visualization->setMinimumSize(400, 400);
 
-    rightLayout->addLayout(zoomLayout);
-    rightLayout->addWidget(m_visualization);
+   rightLayout->addWidget(m_visualization);
 
     QSplitter *splitter = new QSplitter(Qt::Horizontal);
     splitter->addWidget(leftWidget);
@@ -296,9 +288,6 @@ void MainWindow::createWellTab()
         onCalculateCirculation();
     });
 
-    connect(zoomInBtn, &QPushButton::clicked, m_visualization, &WellVisualization::zoomIn);
-    connect(zoomOutBtn, &QPushButton::clicked, m_visualization, &WellVisualization::zoomOut);
-    connect(fitBtn, &QPushButton::clicked, m_visualization, &WellVisualization::fitToScreen);
 
     m_tabWidget->addTab(tab, "Конструкция скважины");
 }
@@ -320,6 +309,11 @@ void MainWindow::createMenuBar()
 
     QAction *loadWellAct = fileMenu->addAction("Загрузить конструкцию скважины (CSV)");
     connect(loadWellAct, &QAction::triggered, this, &MainWindow::onLoadWell);
+
+    // TODAY_FIX_MENU
+    QMenu *todayHelpMenu = menuBar()->addMenu("Справка");
+    QAction *todayAboutAct = todayHelpMenu->addAction("О программе");
+    connect(todayAboutAct, &QAction::triggered, this, &MainWindow::onAbout);
 }
 
 void MainWindow::applySettings()
@@ -864,10 +858,130 @@ void MainWindow::onAbout()
 {
     QMessageBox::about(this, "О программе", 
                        "Программа по расчету инструмента в жидкости.\n"
-                       "Версия: 0.0.0.7");
+                       "Версия: 0.0.0.8");
 }
 
 bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 {
     return QMainWindow::eventFilter(obj, event);
+}
+// TODAY_FIX_CLOSE_EVENT
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    saveWellConstructionToSettings();
+
+    QSettings settings;
+    settings.setValue("pos", pos());
+    settings.setValue("size", size());
+
+    QMainWindow::closeEvent(event);
+}
+
+// TODAY_FIX_SAVE_WELL
+void MainWindow::saveWellConstructionToSettings()
+{
+    if (!m_wellModel)
+        return;
+
+    QSettings settings;
+    settings.remove("wellConstruction");
+
+    settings.beginGroup("wellConstruction");
+
+    const int rows = m_wellModel->rowCount();
+    const int cols = m_wellModel->columnCount();
+
+    settings.setValue("rows", rows);
+    settings.setValue("cols", cols);
+
+    for (int r = 0; r < rows; ++r) {
+        for (int c = 0; c < cols; ++c) {
+            QStandardItem *item = m_wellModel->item(r, c);
+
+            const QString baseKey = QStringLiteral("cell_%1_%2_").arg(r).arg(c);
+
+            if (item) {
+                settings.setValue(baseKey + "text", item->text());
+                settings.setValue(baseKey + "flags", static_cast<int>(item->flags()));
+                settings.setValue(baseKey + "checkable", item->isCheckable());
+                settings.setValue(baseKey + "check", static_cast<int>(item->checkState()));
+            } else {
+                settings.setValue(baseKey + "text", QString());
+                settings.setValue(baseKey + "flags",
+                                  static_cast<int>(Qt::ItemIsEnabled |
+                                                   Qt::ItemIsSelectable |
+                                                   Qt::ItemIsEditable));
+                settings.setValue(baseKey + "checkable", false);
+                settings.setValue(baseKey + "check", static_cast<int>(Qt::Unchecked));
+            }
+        }
+    }
+
+    settings.endGroup();
+    settings.sync();
+}
+
+// TODAY_FIX_LOAD_WELL
+void MainWindow::loadWellConstructionFromSettings()
+{
+    if (!m_wellModel)
+        return;
+
+    QSettings settings;
+    settings.beginGroup("wellConstruction");
+
+    const int rows = settings.value("rows", -1).toInt();
+    const int cols = settings.value("cols", -1).toInt();
+
+    if (rows < 0 || cols != m_wellModel->columnCount()) {
+        settings.endGroup();
+        return;
+    }
+
+    const bool oldBlocked = m_wellModel->blockSignals(true);
+
+    m_wellModel->removeRows(0, m_wellModel->rowCount());
+
+    for (int r = 0; r < rows; ++r) {
+        QList<QStandardItem*> rowItems;
+
+        for (int c = 0; c < cols; ++c) {
+            const QString baseKey = QStringLiteral("cell_%1_%2_").arg(r).arg(c);
+
+            const QString text = settings.value(baseKey + "text").toString();
+
+            const int flagsInt = settings.value(
+                baseKey + "flags",
+                static_cast<int>(Qt::ItemIsEnabled |
+                                 Qt::ItemIsSelectable |
+                                 Qt::ItemIsEditable)
+            ).toInt();
+
+            const bool checkable = settings.value(baseKey + "checkable", false).toBool();
+
+            const int checkStateInt = settings.value(
+                baseKey + "check",
+                static_cast<int>(Qt::Unchecked)
+            ).toInt();
+
+            QStandardItem *item = new QStandardItem(text);
+            item->setFlags(Qt::ItemFlags(flagsInt));
+
+            if (checkable) {
+                item->setCheckable(true);
+                item->setCheckState(static_cast<Qt::CheckState>(checkStateInt));
+            } else {
+                item->setCheckable(false);
+            }
+
+            rowItems.append(item);
+        }
+
+        m_wellModel->appendRow(rowItems);
+    }
+
+    m_wellModel->blockSignals(oldBlocked);
+    settings.endGroup();
+
+    onCalculateCirculation();
 }

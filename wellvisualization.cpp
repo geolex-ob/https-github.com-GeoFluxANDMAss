@@ -56,15 +56,6 @@ void WellVisualization::setLayout(const QVector<LayoutItem> &layout)
     rebuildScene();
 }
 
-void WellVisualization::zoomIn()
-{
-    scale(1.2, 1.2);
-}
-
-void WellVisualization::zoomOut()
-{
-    scale(1.0 / 1.2, 1.0 / 1.2);
-}
 
 void WellVisualization::fitToScreen()
 {

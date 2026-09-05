@@ -21,8 +21,7 @@ public:
     void setLayout(const QVector<LayoutItem> &layout);
 
 public slots:
-    void zoomIn();
-    void zoomOut();
+
     void fitToScreen();
 
 protected:
