@@ -256,13 +256,33 @@ void WellVisualization::rebuildScene()
             height
         );
         
+        // 1. Отрисовка внешнего контура (тело инструмента)
         m_scene->addRect(
             toolRect,
             QPen(QColor(40, 40, 40), 1.2),
-            QBrush(QColor(150, 170, 190, 190))
+            QBrush(QColor(150, 170, 190, 190)) // Базовый серо-голубой цвет
         );
         
-        // Линия между элементами компоновки
+        // ---> ДОБАВЛЕНО: 2. Отрисовка внутреннего объема (более светлый оттенок)
+        double innerWidth = item.tool.innerDiameter() * diameterScale * 0.85;
+        if (innerWidth > 0 && innerWidth < width) {
+            QRectF innerRect(
+                -innerWidth / 2.0,
+                currentDepth,
+                innerWidth,
+                height
+            );
+            
+            // Рисуем внутренний канал поверх основного. 
+            // QPen(Qt::NoPen) убирает рамку, чтобы переход был плавным.
+            m_scene->addRect(
+                innerRect,
+                QPen(Qt::NoPen), 
+                QBrush(QColor(230, 245, 255, 255)) // Светло-голубой/почти белый оттенок
+            );
+        }
+        
+        // Линия между элементами компоновки (стыки)
         m_scene->addLine(
             -width / 2.0,
             currentDepth + height,

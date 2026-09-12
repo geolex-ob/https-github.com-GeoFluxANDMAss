@@ -100,10 +100,13 @@ void MainWindow::createToolTab()
     m_addToolBtn = new QPushButton("Добавить");
     m_removeToolBtn = new QPushButton("Удалить");
     m_calcVolumeBtn = new QPushButton("Рассчитать объем");
+        // ---> ДОБАВЛЕНО: Инициализация кнопки "Добавить в компоновку"
+    m_addToLayoutBtn = new QPushButton("Добавить в КНБК");
 
     btnLayout->addWidget(m_addToolBtn);
     btnLayout->addWidget(m_removeToolBtn);
     btnLayout->addWidget(m_calcVolumeBtn);
+    btnLayout->addWidget(m_addToLayoutBtn); // ---> ДОБАВЛЕНО: Добавляем кнопку на панель
     btnLayout->addStretch();
 
     layout->addWidget(m_toolTable);
@@ -112,6 +115,9 @@ void MainWindow::createToolTab()
     connect(m_addToolBtn, &QPushButton::clicked, this, &MainWindow::onAddTool);
     connect(m_removeToolBtn, &QPushButton::clicked, this, &MainWindow::onRemoveTool);
     connect(m_calcVolumeBtn, &QPushButton::clicked, this, &MainWindow::onCalculateVolume);
+    
+    // ---> ДОБАВЛЕНО: Подключаем клик к уже существующему слоту добавления в компоновку
+    connect(m_addToLayoutBtn, &QPushButton::clicked, this, &MainWindow::onAddToLayout);
 
     m_tabWidget->addTab(tab, "Справочник");
 }
@@ -856,9 +862,9 @@ void MainWindow::onLoadWell()
 
 void MainWindow::onAbout()
 {
-    QMessageBox::about(this, "О программе", 
+    QMessageBox::about(this, "О программе GeoFluxANDmass", 
                        "Программа по расчету инструмента в жидкости.\n"
-                       "Версия: 0.0.0.8");
+                       "Версия: 0.0.0.9");
 }
 
 bool MainWindow::eventFilter(QObject *obj, QEvent *event)
