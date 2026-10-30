@@ -296,12 +296,12 @@ void MainWindow::setupUI()
         infoLayout->addRow(label, le);
     };
 
-    addInfoField("Производительность, л/сек:");
-    addInfoField("Вес таль блока, т:");
+    addInfoField("Производительность, л/сек:", "1.0");
+    addInfoField("Вес тальблока, т:");
     addInfoField("Вес квадрата, т:");
     addInfoField("Коэфф. кавернозности:", "1.0");
     addInfoField("Глубина спуска, м:", "0");
-    addInfoField("Диаметр долота, мм:");
+    addInfoField("Диаметр долота, мм:", "215.9");
     addInfoField("Плотность, г/см3:", "1.0");
 
     // 2. Конструкция скважины
