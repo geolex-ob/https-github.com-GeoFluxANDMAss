@@ -265,10 +265,10 @@ void KNBKEditorDialog::loadCSV()
         if (fieldAt(colMass).isEmpty() || fieldAt(colVol).isEmpty()) {
             recalcNeeded = true;
         } else if (colMass == 4 && colVol == 5) {
-            // Проверка корректности сохраненного объема металла: если он не
-            // соответствует формуле pi/4*(OD^2-ID^2) (расхождение > 0.5%),
-            // пересчитываем — лечит старые файлы, где в этой колонке стоял
-            // объем внутренней полости или мусор из-за перестановки колонок.
+            // Проверка сохраненных значений: ручные значения (масса и/или объем,
+            // введенные в справочнике) НЕ перетираем. Авто-пересчет включаем
+            // только если оба значения соответствуют геометрии стали с точностью
+            // до 2% — иначе это паспортные/ручные данные или мусор старого формата.
             bool okO = false, okI = false;
             QString odStr = fields.value(2);
             QString idStr = fields.value(3);
@@ -278,8 +278,15 @@ void KNBKEditorDialog::loadCSV()
             double id = idStr.toDouble(&okI);
             if (okO && okI && od > 0 && id > 0 && id < od) {
                 double expected_l = M_PI * ((od / 1000.0) * (od / 1000.0) - (id / 1000.0) * (id / 1000.0)) / 4.0 * 1000.0;
-                double stored = fieldAt(colVol).replace(",", ".").toDouble();
-                if (expected_l > 0 && std::fabs(stored - expected_l) > 0.005 * expected_l) {
+                double stored_v = fieldAt(colVol).replace(",", ".").toDouble();
+                double stored_m = fieldAt(colMass).replace(",", ".").toDouble();
+                const bool volGeomOk = expected_l > 0 && std::fabs(stored_v - expected_l) <= 0.02 * expected_l;
+                const bool massGeomOk = expected_l > 0 && std::fabs(stored_m - expected_l * STEEL_DENSITY_KG_M3 / 1000.0) <= 0.02 * (expected_l * STEEL_DENSITY_KG_M3 / 1000.0);
+                // Мусор старого формата: объем не соответствует геометрии, но масса
+                // тоже не образует с ним физически возможную пару (паспортный вариант)
+                const bool plausiblePair = stored_v > 0 && stored_m > 0 &&
+                        stored_m / stored_v * 1000.0 >= 500.0 && stored_m / stored_v * 1000.0 <= 20000.0;
+                if (!volGeomOk && !massGeomOk && !plausiblePair) {
                     recalcNeeded = true;
                 }
             }

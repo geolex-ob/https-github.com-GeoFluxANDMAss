@@ -56,6 +56,20 @@ static bool volMatchesGeometry(double vol_l_m, double od_mm, double id_mm)
     return std::fabs(vol_l_m - expected) <= 0.005 * expected;
 }
 
+// Собственная плотность металла по паспортным данным справочника:
+// rho_собств = масса 1 м [кг/м] / объём металла 1 м [л/м] * 1000 [кг/м3].
+// Используется при расчете архимедовой силы для инструментов с ручным весом
+// (УБТ, переводники с выточками, несталь), чтобы потеря веса в растворе
+// соответствовала именно паспортному весу, а не гипотетической стали 7850.
+// Результат ограничивается разумным диапазоном 500..20000 кг/м3.
+static double effectiveSteelDensity(double mass_kg_m, double vol_l_m)
+{
+    if (mass_kg_m <= 0 || vol_l_m <= 0) return STEEL_DENSITY_KG_M3_REF;
+    const double rho = mass_kg_m / vol_l_m * 1000.0;
+    if (rho < 500.0 || rho > 20000.0) return STEEL_DENSITY_KG_M3_REF;
+    return rho;
+}
+
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
     setWindowTitle("Расчеты ГТИ");
@@ -73,7 +87,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     
     auto *helpMenu = menuBar()->addMenu("Справка");
     helpMenu->addAction("О программе", [this](){
-        QMessageBox::about(this, "О программе", "GeoFluxANDMAss.\nПрограмма расчетов ГТИ. Версия 0.1.0\nhttps://github.com/geolex-ob/https-github.com-GeoFluxANDMAss/");
+        QMessageBox::about(this, "О программе", "Расчеты ГТИ. GeoFluxANDMAss.\nhttps://github.com/geolex-ob/https-github.com-GeoFluxANDMAss\nВерсия 0.1.1");
     });
 
     statusBar()->showMessage("Готово");
@@ -297,10 +311,10 @@ void MainWindow::setupUI()
     };
 
     addInfoField("Производительность, л/сек:", "1.0");
-    addInfoField("Вес тальблока, т:");
-    addInfoField("Вес квадрата, т:");
+    addInfoField("Вес тальблока, т:", "0.0");
+    addInfoField("Вес квадрата, т:", "0.0");
     addInfoField("Коэфф. кавернозности:", "1.0");
-    addInfoField("Глубина спуска, м:", "0");
+    addInfoField("Глубина спуска, м:", "0.0");
     addInfoField("Диаметр долота, мм:", "215.9");
     addInfoField("Плотность, г/см3:", "1.0");
 
@@ -789,25 +803,41 @@ void MainWindow::loadKNBKReference()
         // расчёта более чем на 2% — такие значения НЕ перетираются.
         const QString mode = fieldAt(6);
         const bool manualMode = mode.contains(QString::fromUtf8("ручн"), Qt::CaseInsensitive);
-        const bool massIsManual = geomOk && mass > 0 && !massMatchesGeometry(mass, od_mm, id_mm);
+        // Ручной ввод распознаётся НЕЗАВИСИМО для массы и объёма: пользователь мог
+        // ввести вручную только вес погонного метра или только его объём.
+        const bool massIsManual = (mass > 0) && (!geomOk || !massMatchesGeometry(mass, od_mm, id_mm));
+        // Объем считается «своим» (не перетирать), если он задан и согласован либо
+        // с геометрией, либо с ручной массой (масса/объем = плотность в разумных
+        // пределах). Иначе — это мусор из старой версии файла: пересчитываем.
+        const bool volConsistentWithMass =
+            (mass > 0 && vol > 0 &&
+             std::fabs(vol * effectiveSteelDensity(mass, vol) / 1000.0 - mass) <= 0.02 * mass);
+        const bool volIsManual = (vol > 0) && geomOk && !volMatchesGeometry(vol, od_mm, id_mm)
+                                 && !(massIsManual && volConsistentWithMass);
 
-        if (geomOk && !manualMode && !massIsManual) {
+        if (massIsManual) {
+            // Масса 1 м введена вручную в справочнике (паспортное значение).
+            // Она УЧАСТВУЕТ в расчете итогового веса инструмента как есть.
+            // Объём металла 1 м: если он тоже введён вручную (и не согласован с
+            // массой) или геометрия недоступна — оставляем как есть; иначе выводим
+            // из паспортной массы V = m/rho_ст, чтобы архимедова сила
+            // соответствовала паспортному весу.
+            if (!geomOk) {
+                if (vol <= 0) vol = mass / STEEL_DENSITY_KG_M3_REF * 1000.0;
+            } else if (vol <= 0 || (!volIsManual && !volConsistentWithMass)) {
+                vol = mass / STEEL_DENSITY_KG_M3_REF * 1000.0; // л на 1 м
+            }
+        } else if (volIsManual && geomOk) {
+            // Вручную задан только объём металла погонного метра — масса
+            // восстанавливается из него (сталь 7850), сам объём не трогаем.
+            if (mass <= 0) mass = vol * STEEL_DENSITY_KG_M3_REF / 1000.0;
+        } else if (geomOk && !manualMode) {
             // Обычный случай: масса и объём соответствуют геометрии (сталь 7850).
             // Лечим старые файлы с перепутанными/неверными колонками.
             if (expected_vol_l > 0 && (vol <= 0 || std::fabs(vol - expected_vol_l) > 0.005 * expected_vol_l))
                 vol = expected_vol_l;
             if (mass <= 0 || std::fabs(mass - expected_mass) > 0.02 * expected_mass)
                 mass = expected_mass;
-        } else if (massIsManual) {
-            // Масса введена вручную — объём металла берём из неё же
-            // (V = m/ρ), чтобы архимедова сила соответствовала паспортному весу.
-            // Если сохранённый объём близок к расчётному — оставляем как есть.
-            if (vol <= 0 || !volMatchesGeometry(vol, od_mm, id_mm)) {
-                vol = mass / STEEL_DENSITY_KG_M3_REF * 1000.0; // л на 1 м
-            }
-        } else if (geomOk && vol > 0 && !manualMode) {
-            // Массы нет, но объём есть — восстановим массу из объёма.
-            if (mass <= 0) mass = vol * STEEL_DENSITY_KG_M3_REF / 1000.0;
         }
 
         data.mass1m = QString::number(mass, 'f', 2);
@@ -884,6 +914,7 @@ void MainWindow::calculate()
 
     struct KnbkSegment { double top; double bottom; double vMetalPerM; };
     QList<KnbkSegment> segments;
+    double buoy_loss_t = 0.0; // сумма rho_р * V_металла по строкам, т (с поправкой на собств. плотность)
 
     // Блок сбора КНБК
     for (int row = 0; row < m_knbkTable->rowCount(); ++row) {
@@ -899,8 +930,13 @@ void MainWindow::calculate()
         double outer_d = getVal(2) / 1000.0; // м
         double inner_d = getVal(3) / 1000.0; // м
 
-        // Вес погонного метра берем из таблицы (туда он попадает из справочника при выборе)
+        // Вес погонного метра берем из таблицы (туда он попадает из справочника при выборе;
+        // если в справочнике вес 1 м введен вручную — используется паспортное значение)
         double mass_1m = getVal(4);
+
+        // Объем металла 1 м из справочника/таблицы (колонка 5). Если задан —
+        // участвует в расчете вытесненного объема и архимедовой силы как есть.
+        double vol_1m_l = getVal(5); // л на 1 м
 
         // Защита от физически невозможных данных (ID >= OD)
         if (length > 0 && outer_d > 0 && inner_d >= outer_d) {
@@ -918,20 +954,44 @@ void MainWindow::calculate()
         // т.е. геометрический объем металла стенки: pi/4 * (OD^2 - ID^2)
         double disp_1m_m3 = M_PI * (outer_d * outer_d - inner_d * inner_d) / 4.0;
 
-        // Режим "Вручную": пользователь может задать собственный объем 1 м (кол. 5)
+        // Приоритет значения колонки 5 «Объем 1 м, л» зависит от режима строки:
         QComboBox *modeCombo = qobject_cast<QComboBox*>(m_knbkTable->cellWidget(row, 6));
-        bool isManual = (modeCombo && modeCombo->currentText() == "Вручную");
-        if (isManual && getVal(5) > 0) {
-            disp_1m_m3 = getVal(5) / 1000.0; // л -> м3
+        const bool isManualRow = (modeCombo && modeCombo->currentText() == "Вручную");
+        if (isManualRow) {
+            // Режим "Вручную": пользователь сам задал массу и объем — используем их как есть.
+            if (vol_1m_l > 0)
+                disp_1m_m3 = vol_1m_l / 1000.0; // л -> м3
+        } else {
+            // Режим "Справочник": если справочник содержит ОБЪЕМ ВНУТРЕННЕЙ ПОЛОСТИ
+            // (pi/4*ID^2 — старые файлы), а не объем металла стенок (pi/4*(OD^2-ID^2)),
+            // такое значение физически невозможно как объем металла (его собственная
+            // плотность оказалась бы больше плотности стали) — пересчитываем из геометрии.
+            const double rho_check = effectiveSteelDensity(mass_1m, vol_1m_l);
+            if (vol_1m_l > 0 && !(rho_check > STEEL_DENSITY_KG_M3_REF * 1.02))
+                disp_1m_m3 = vol_1m_l / 1000.0; // л -> м3
         }
+
+        // Если массы 1 м нет — восстанавливаем из объема металла (сталь 7850)
+        if (mass_1m <= 0 && disp_1m_m3 > 0)
+            mass_1m = disp_1m_m3 * STEEL_DENSITY_KG_M3_REF;
+
+        // Собственная плотность металла строки (паспорт масса/объем) — для
+        // корректной архимедовой силы при ручном весе (УБТ и т.п.)
+        const double rho_eff = effectiveSteelDensity(mass_1m, disp_1m_m3 * 1000.0);
 
         // Вес в воздухе = Длина * Масса 1 м / 1000 (кг -> т)
         double weight_air = length * mass_1m / 1000.0;
         total_weight_air_t += weight_air;
 
-        // Вытесненный объем = Длина * Объем металла 1 м
+        // Вытесненный объем = Длина * Объем металла 1 м (из справочника/таблицы,
+        // включая ручной ввод; если не задан — из геометрии pi/4*(OD^2-ID^2))
         double v_disp = disp_1m_m3 * length;
         total_volume_tool_m3 += v_disp;
+
+        // Потеря веса в растворе по этой строке: rho_р * V_металла. Для строк с
+        // паспортным (ручным) весом используем собственную плотность металла —
+        // см. weight_in_mud_t ниже.
+        buoy_loss_t += density * v_disp * (STEEL_DENSITY_KG_M3_REF / rho_eff);
 
         // Емкостной объем = Длина * объем полости 1 м
         double v_inner = (capacity_1m_l / 1000.0) * length;
@@ -1037,10 +1097,12 @@ void MainWindow::calculate()
     // Архимедова сила для ПОЛОГО инструмента с входным и выходным отверстиями.
     // Раствор свободно проходит через внутреннюю полость (вход сверху, выход снизу),
     // поэтому столб жидкости внутри полости не создает дополнительной осевой силы
-    // и в вытеснении участвует ТОЛЬКО объем металла стенок: V = pi/4*(OD^2-ID^2)*L.
+    // и в вытеснении участвует ТОЛЬКО объем металла стенок: V = pi/4*(OD^2-ID^2)*L
+    // (или объем металла 1 м из справочника, если он задан/введен вручную).
     // Плотность раствора: г/см3 == т/м3 == кг/л, поэтому пересчет множителя не нужен.
-    // W_раствор = W_воздух - rho_р * V_металла  (то же самое, что W_возд*(1 - rho_р/rho_ст))
-    double weight_in_mud_t = total_weight_air_t - density * total_volume_tool_m3;
+    // buoy_loss_t — сумма по строкам rho_р * V_металла с поправкой на собственную
+    // плотность металла паспортных (ручных) позиций: W_раствор = W_воздух - buoy_loss_t
+    double weight_in_mud_t = total_weight_air_t - buoy_loss_t;
 
     // Контроль корректности исходных данных
     if (density > 2.6) {
