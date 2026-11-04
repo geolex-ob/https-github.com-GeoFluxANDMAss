@@ -61,9 +61,24 @@ private:
     void setSingleToBottom(int row);
 
     // Синхронизация чекбокса в ячейке (row,0) с ролью ToBottomRole.
-    // Чекбокс живёт рядом с комбобоксом в контейнере-виджете ячейки (col 0).
     void updateToBottomCheckBox(int row);
     void updateAllToBottomCheckBoxes();
+
+    // Обратная промывка: раствор идёт вниз по затрубному, вверх по трубам.
+    // Влияет на «Время выхода газа» (газ выходит по трубам, а не по затрубному).
+    // Сохраняется в QSettings (Info/reverseCirculation) и в data/info.csv.
+    QCheckBox *m_reverseCirculationCheck = nullptr;
+    bool isReverseCirculation() const;
+    void saveReverseCirculation();
+    void loadReverseCirculation();
+
+    // Файл data/info.csv — последние введённые вручную значения раздела
+    // «Информация» (производительность, веса, кавернозность, глубина, долото,
+    // плотность, режим промывки). Формат: "ключ;значение" по строке, UTF-8, ";".
+    // Не пересекается с knbk.csv / knbk_layout.csv / QSettings компоновки КНБК.
+    void saveInfoCsv();
+    void loadInfoCsv();
+    QString infoCsvPath() const;
 
     QMap<QString, QLineEdit*> m_infoInputs;
     QMap<QString, QLineEdit*> m_resultOutputs;

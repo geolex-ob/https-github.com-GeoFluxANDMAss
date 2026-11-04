@@ -10,6 +10,7 @@
 #include <QHeaderView>
 #include <QRegularExpression>
 #include <QFile>
+#include <QFileInfo>
 #include <QTextStream>
 #include <QDir>
 #include <QCoreApplication>
@@ -78,12 +79,14 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
     auto *helpMenu = menuBar()->addMenu("Справка");
     helpMenu->addAction("О программе", [this](){
-        QMessageBox::about(this, "О программе", "Расчеты ГТИ. GeoFluxANDMAss.\nhttps://github.com/geolex-ob/https-github.com-GeoFluxANDMAss\nВерсия 0.1.2");
+        QMessageBox::about(this, "О программе", "Расчеты ГТИ.\nhttps://github.com/geolex-ob/https-github.com-GeoFluxANDMAss\nВерсия 0.1.4");
     });
 
     statusBar()->showMessage("Готово");
 
     setupUI();
+    loadReverseCirculation();   // восстановить режим промывки (QSettings)
+    loadInfoCsv();              // затем — перекрыть значениями из data/info.csv (если есть)
 
     loadKNBKReference();
     loadCSV(getDataPath("well_construction.csv"), m_constructionTable);
@@ -95,11 +98,105 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
 MainWindow::~MainWindow() {}
 
+// ================= DATA/INFO.CSV — РУЧНЫЕ ДАННЫЕ РАЗДЕЛА «ИНФОРМАЦИЯ» =================
+
+QString MainWindow::infoCsvPath() const
+{
+    // Тот же каталог data, что и для knbk.csv / well_construction.csv
+    return const_cast<MainWindow*>(this)->getDataPath("info.csv");
+}
+
+void MainWindow::saveInfoCsv()
+{
+    QFile file(infoCsvPath());
+    QDir().mkpath(QFileInfo(file).absolutePath());
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) return;
+
+    QTextStream out(&file);
+    out.setEncoding(QStringConverter::Utf8);
+
+    // Ключи — те же подписи, что в m_infoInputs (стабильны между версиями).
+    // Значение режима промывки — отдельным ключом.
+    const QStringList keys = {
+        "Производительность, л/сек:",
+        "Вес тальблока, т:",
+        "Вес квадрата, т:",
+        "Коэфф. кавернозности:",
+        "Глубина спуска, м:",
+        "Диаметр долота, мм:",
+        "Плотность, г/см3:"
+    };
+    for (const QString &k : keys) {
+        if (m_infoInputs.contains(k)) {
+            // Заменяем перевод строки/; в значении, чтобы не ломать формат
+            QString v = m_infoInputs[k]->text();
+            v.replace("\n", " ").replace(";", ",");
+            out << k << ";" << v << "\n";
+        }
+    }
+    out << "Обратная промывка;" << (isReverseCirculation() ? "1" : "0") << "\n";
+    file.close();
+}
+
+void MainWindow::loadInfoCsv()
+{
+    QFile file(infoCsvPath());
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return;
+
+    QTextStream in(&file);
+    in.setEncoding(QStringConverter::Utf8);
+
+    while (!in.atEnd()) {
+        const QString line = in.readLine();
+        if (line.trimmed().isEmpty()) continue;
+        const int sep = line.indexOf(';');
+        if (sep < 0) continue;
+        const QString key = line.left(sep).trimmed();
+        const QString val = line.mid(sep + 1);
+
+        if (key == QStringLiteral("Обратная промывка")) {
+            if (m_reverseCirculationCheck) {
+                m_reverseCirculationCheck->blockSignals(true);
+                m_reverseCirculationCheck->setChecked(val.trimmed() == "1");
+                m_reverseCirculationCheck->blockSignals(false);
+            }
+        } else if (m_infoInputs.contains(key)) {
+            m_infoInputs[key]->setText(val);
+        }
+    }
+    file.close();
+}
+
+// ================= ОБРАТНАЯ ПРОМЫВКА =================
+
+bool MainWindow::isReverseCirculation() const
+{
+    return m_reverseCirculationCheck && m_reverseCirculationCheck->isChecked();
+}
+
+void MainWindow::saveReverseCirculation()
+{
+    QSettings settings;
+    settings.setValue("Info/reverseCirculation", isReverseCirculation());
+}
+
+void MainWindow::loadReverseCirculation()
+{
+    QSettings settings;
+    const bool rev = settings.value("Info/reverseCirculation", false).toBool();
+    if (m_reverseCirculationCheck) {
+        m_reverseCirculationCheck->blockSignals(true);
+        m_reverseCirculationCheck->setChecked(rev);
+        m_reverseCirculationCheck->blockSignals(false);
+    }
+}
+
 // ================= АВТОСОХРАНЕНИЕ КОМПОНОВКИ КНБК =================
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-    saveKNBKLayout();
+    saveInfoCsv();       // последние введённые данные раздела «Информация»
+    saveKNBKLayout();    // компоновка КНБК (QSettings, как было)
     QMainWindow::closeEvent(event);
 }
 
@@ -117,8 +214,9 @@ void MainWindow::saveKNBKLayout()
         settings.setArrayIndex(row);
 
         QString code;
-        QComboBox *codeCombo = qobject_cast<QComboBox*>(m_knbkTable->cellWidget(row, 0)
-                                ? m_knbkTable->cellWidget(row, 0)->findChild<QComboBox*>() : nullptr);
+        QComboBox *codeCombo = nullptr;
+        if (QWidget *cellW = m_knbkTable->cellWidget(row, 0))
+            codeCombo = cellW->findChild<QComboBox*>();
         if (codeCombo) {
             code = codeCombo->currentText();
         } else {
@@ -202,7 +300,6 @@ bool MainWindow::loadKNBKLayout()
         if (singleToBottom && m_knbkTable->item(row, 0)) {
             setSingleToBottom(row);
         } else if (toBottom && m_knbkTable->item(row, 0)) {
-            // Устанавливаем роль и синхронизируем видимый чекбокс
             m_knbkTable->item(row, 0)->setData(ToBottomRole, true);
             updateToBottomCheckBox(row);
         }
@@ -352,6 +449,19 @@ void MainWindow::setupUI()
     };
 
     addInfoField("Производительность, л/сек:", "1.0");
+
+    // Галочка «Обратная промывка» — под полем производительности насоса.
+    // Раствор идёт вниз по затрубному, вверх по трубам: «время выхода газа»
+    // считается по объёму трубного пространства, а не затрубного.
+    // Хранится в QSettings и в data/info.csv; формат CSV справочника не меняется.
+    m_reverseCirculationCheck = new QCheckBox("Обратная промывка", infoGroup);
+    m_reverseCirculationCheck->setToolTip(
+        "При обратной промывке раствор идёт вниз по затрубному пространству,\n"
+        "а вверх — по трубам. Время выхода газа считается по объёму труб.");
+    infoLayout->addRow(QString(), m_reverseCirculationCheck);
+    connect(m_reverseCirculationCheck, &QCheckBox::toggled,
+            this, [this](bool){ saveReverseCirculation(); saveInfoCsv(); });
+
     addInfoField("Вес тальблока, т:", "0.0");
     addInfoField("Вес квадрата, т:", "0.0");
     addInfoField("Коэфф. кавернозности:", "1.0");
@@ -359,6 +469,11 @@ void MainWindow::setupUI()
             this, [this]() { updateToBottomLengths(); });
     addInfoField("Диаметр долота, мм:", "215.9");
     addInfoField("Плотность, г/см3:", "1.0");
+
+    // Автосохранение в data/info.csv при завершении редактирования любого поля
+    for (auto it = m_infoInputs.begin(); it != m_infoInputs.end(); ++it) {
+        connect(it.value(), &QLineEdit::editingFinished, this, &MainWindow::saveInfoCsv);
+    }
 
     auto *constrGroup = new QGroupBox("Конструкция скважины", central);
     auto *constrLayout = new QVBoxLayout(constrGroup);
@@ -501,7 +616,6 @@ void MainWindow::setupKNBKCombo(int row)
 
     m_knbkTable->setCellWidget(row, 0, cellW);
 
-    // Сам item(row,0) остаётся в таблице (перекрыт контейнером), хранит роли
     if (!m_knbkTable->item(row, 0))
         m_knbkTable->setItem(row, 0, new QTableWidgetItem(""));
 
@@ -573,7 +687,6 @@ void MainWindow::updateToBottomCheckBox(int row)
     check->setChecked(tb || sb);
     check->blockSignals(false);
 
-    // Визуально: одиночный выбор — «частично отмечено»/выделение жирным
     if (sb) {
         check->setTristate(true);
         check->setCheckState(Qt::PartiallyChecked);
@@ -743,7 +856,6 @@ void MainWindow::setSingleToBottom(int row)
 {
     if (m_loadingLayout) return;
 
-    // Снимаем одиночный выбор со всех строк
     for (int r = 0; r < m_knbkTable->rowCount(); ++r) {
         if (QTableWidgetItem *it = m_knbkTable->item(r, 0))
             it->setData(SingleToBottomRole, false);
@@ -751,7 +863,7 @@ void MainWindow::setSingleToBottom(int row)
     QTableWidgetItem *cell = m_knbkTable->item(row, 0);
     if (!cell) return;
     cell->setData(SingleToBottomRole, true);
-    cell->setData(ToBottomRole, true);   // для сохранения маркера ◉ в QSettings/CSV
+    cell->setData(ToBottomRole, true);
 
     updateAllToBottomCheckBoxes();
     updateToBottomLengths();
@@ -1261,10 +1373,16 @@ void MainWindow::calculate()
             "Вес в растворе получился отрицательным — проверьте массу 1 м и диаметры КНБК.");
     }
 
-    double q_pump_m3_min = q_pump * 60.0 / 1000.0;
-    double time_gas_min = v_annulus / q_pump_m3_min;
-    double time_down_min = total_capacity_m3 / q_pump_m3_min;
-    double full_cycle_time_min = time_down_min + time_gas_min;
+    // Прямая промывка: вниз по трубам (total_capacity_m3), вверх по затрубному
+    // (v_annulus). Газ, поднимаясь с забоя, выходит по затрубному → «время выхода
+    // газа» = v_annulus / Q.
+    // Обратная промывка: вниз по затрубному, вверх по трубам. Газ выходит по
+    // трубам → «время выхода газа» = total_capacity_m3 / Q.
+    // Полное время цикла в обоих случаях = (V_труб + V_затруб) / Q.
+    const bool reverse = isReverseCirculation();
+    double q_pump_m3_min = q_pump * 60.0 / 1000.0; // л/с -> м3/мин
+    double time_gas_min = (reverse ? total_capacity_m3 : v_annulus) / q_pump_m3_min;
+    double full_cycle_time_min = (total_capacity_m3 + v_annulus) / q_pump_m3_min;
 
     auto setRes = [&](const QString &key, double val) {
         if (m_resultOutputs.contains(key))
@@ -1281,5 +1399,7 @@ void MainWindow::calculate()
     setRes("Время выхода газа, мин:", time_gas_min);
     setRes("Полное время цикла, мин:", full_cycle_time_min);
 
-    statusBar()->showMessage("Расчёт выполнен успешно", 3000);
+    statusBar()->showMessage(reverse
+        ? "Расчёт выполнен (обратная промывка)"
+        : "Расчёт выполнен (прямая промывка)", 4000);
 }
