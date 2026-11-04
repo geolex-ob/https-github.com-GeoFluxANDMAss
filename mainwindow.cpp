@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "knbkeditordialog.h"
+#include "tankvolumetab.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -79,7 +80,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
     auto *helpMenu = menuBar()->addMenu("Справка");
     helpMenu->addAction("О программе", [this](){
-        QMessageBox::about(this, "О программе", "Расчеты ГТИ.\nhttps://github.com/geolex-ob/https-github.com-GeoFluxANDMAss\nВерсия 0.1.4");
+        QMessageBox::about(this, "О программе", "Расчеты ГТИ.\nhttps://github.com/geolex-ob/https-github.com-GeoFluxANDMAss\nВерсия 0.1.5");
     });
 
     statusBar()->showMessage("Готово");
@@ -115,8 +116,6 @@ void MainWindow::saveInfoCsv()
     QTextStream out(&file);
     out.setEncoding(QStringConverter::Utf8);
 
-    // Ключи — те же подписи, что в m_infoInputs (стабильны между версиями).
-    // Значение режима промывки — отдельным ключом.
     const QStringList keys = {
         "Производительность, л/сек:",
         "Вес тальблока, т:",
@@ -128,7 +127,6 @@ void MainWindow::saveInfoCsv()
     };
     for (const QString &k : keys) {
         if (m_infoInputs.contains(k)) {
-            // Заменяем перевод строки/; в значении, чтобы не ломать формат
             QString v = m_infoInputs[k]->text();
             v.replace("\n", " ").replace(";", ",");
             out << k << ";" << v << "\n";
@@ -229,8 +227,6 @@ void MainWindow::saveKNBKLayout()
                 code = code.trimmed();
             }
         }
-        // Формат QSettings/CSV не меняется: маркеры ✔ (обычная галочка) и ◉
-        // (одиночный выбор) добавляются в конец сохранённого шифра.
         {
             QTableWidgetItem *codeCell = m_knbkTable->item(row, 0);
             const bool tb = codeCell && codeCell->data(ToBottomRole).toBool();
@@ -429,8 +425,12 @@ QString MainWindow::getDataPath(const QString &fileName)
 
 void MainWindow::setupUI()
 {
-    auto *central = new QWidget(this);
-    setCentralWidget(central);
+    // Вкладки: [0] — КНБК/веса (существующая логика), [1] — Объём ёмкости
+    m_tabs = new QTabWidget(this);
+    setCentralWidget(m_tabs);
+
+    auto *central = new QWidget();
+    m_tabs->addTab(central, "КНБК / веса");
 
     auto *mainLayout = new QVBoxLayout(central);
     mainLayout->setContentsMargins(5, 5, 5, 5);
@@ -451,9 +451,6 @@ void MainWindow::setupUI()
     addInfoField("Производительность, л/сек:", "1.0");
 
     // Галочка «Обратная промывка» — под полем производительности насоса.
-    // Раствор идёт вниз по затрубному, вверх по трубам: «время выхода газа»
-    // считается по объёму трубного пространства, а не затрубного.
-    // Хранится в QSettings и в data/info.csv; формат CSV справочника не меняется.
     m_reverseCirculationCheck = new QCheckBox("Обратная промывка", infoGroup);
     m_reverseCirculationCheck->setToolTip(
         "При обратной промывке раствор идёт вниз по затрубному пространству,\n"
@@ -470,7 +467,6 @@ void MainWindow::setupUI()
     addInfoField("Диаметр долота, мм:", "215.9");
     addInfoField("Плотность, г/см3:", "1.0");
 
-    // Автосохранение в data/info.csv при завершении редактирования любого поля
     for (auto it = m_infoInputs.begin(); it != m_infoInputs.end(); ++it) {
         connect(it.value(), &QLineEdit::editingFinished, this, &MainWindow::saveInfoCsv);
     }
@@ -520,13 +516,11 @@ void MainWindow::setupUI()
         colWidths.endGroup();
     }
 
-    // Изменение длины вручную → пересчитываем «до забоя»
     connect(m_knbkTable, &QTableWidget::cellChanged, this, [this](int row, int col) {
         if (m_loadingLayout || col != 1) return;
         updateToBottomLengths();
     });
 
-    // Правый клик по ячейке «Шифр» → контекстное меню одиночного выбора
     m_knbkTable->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_knbkTable, &QTableWidget::customContextMenuRequested,
             this, &MainWindow::showKNBKContextMenu);
@@ -585,12 +579,12 @@ void MainWindow::setupUI()
     connect(addKrbkBtn, &QPushButton::clicked, this, &MainWindow::addKNBKRow);
     connect(delKrbkBtn, &QPushButton::clicked, this, &MainWindow::removeKNBKRow);
     connect(calcBtn, &QPushButton::clicked, this, &MainWindow::calculate);
+
+    // ---- Вторая вкладка: объём горизонтального цилиндра ----
+    m_tankTab = new TankVolumeTab(this);
+    m_tabs->addTab(m_tankTab, "Объём ёмкости");
 }
 
-// Ячейка «Шифр» — контейнер: [☐ чекбокс][ QComboBox с шифром ].
-// Виджет-контейнер перекрывает QTableWidgetItem, но роль ToBottomRole/
-// SingleToBottomRole по-прежнему хранится в самом item(row,0), поэтому
-// saveKNBKLayout()/loadKNBKLayout() и формат CSV не меняются.
 void MainWindow::setupKNBKCombo(int row)
 {
     QWidget *cellW = new QWidget(m_knbkTable);
@@ -659,7 +653,6 @@ void MainWindow::onKNBKToBottomToggled(bool checked)
     QTableWidgetItem *cell = m_knbkTable->item(row, 0);
     if (!cell) return;
 
-    // Клик по чекбоксу «До забоя» снимает одиночный выбор, если он был
     if (cell->data(SingleToBottomRole).toBool()) {
         cell->setData(SingleToBottomRole, false);
     }
@@ -1373,14 +1366,8 @@ void MainWindow::calculate()
             "Вес в растворе получился отрицательным — проверьте массу 1 м и диаметры КНБК.");
     }
 
-    // Прямая промывка: вниз по трубам (total_capacity_m3), вверх по затрубному
-    // (v_annulus). Газ, поднимаясь с забоя, выходит по затрубному → «время выхода
-    // газа» = v_annulus / Q.
-    // Обратная промывка: вниз по затрубному, вверх по трубам. Газ выходит по
-    // трубам → «время выхода газа» = total_capacity_m3 / Q.
-    // Полное время цикла в обоих случаях = (V_труб + V_затруб) / Q.
     const bool reverse = isReverseCirculation();
-    double q_pump_m3_min = q_pump * 60.0 / 1000.0; // л/с -> м3/мин
+    double q_pump_m3_min = q_pump * 60.0 / 1000.0;
     double time_gas_min = (reverse ? total_capacity_m3 : v_annulus) / q_pump_m3_min;
     double full_cycle_time_min = (total_capacity_m3 + v_annulus) / q_pump_m3_min;
 

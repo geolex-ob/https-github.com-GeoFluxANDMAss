@@ -7,10 +7,13 @@
 #include <QComboBox>
 #include <QCheckBox>
 #include <QPoint>
+#include <QTabWidget>
 
 // Единый формат файла knbk.csv (колонки 0..5 одинаковы для справочника и таблицы КНБК):
 // Шифр;Длина, м;Наружный d, мм;Внутренний d, мм;Масса 1 м, кг;Объем 1 м, л;Режим;...
 extern const QStringList KNBK_CSV_HEADER;
+
+class TankVolumeTab;
 
 class MainWindow : public QMainWindow
 {
@@ -85,6 +88,10 @@ private:
 
     QTableWidget *m_knbkTable = nullptr;
     QTableWidget *m_constructionTable = nullptr;
+
+    // Вкладки: [0] — КНБК / веса (текущая логика), [1] — Объём ёмкости
+    QTabWidget *m_tabs = nullptr;
+    TankVolumeTab *m_tankTab = nullptr;
 
     struct KNBKData {
         QString length;

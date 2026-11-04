@@ -22,9 +22,6 @@ private:
     void loadCSV();
     void saveCSV();
     void recalculateRow(int row);
-    // Метка "пользователь ввёл значение вручную" (не перетирать авто-расчётом).
-    // Значения флагов < Qt::ItemIsUserMinFlag — системные, поэтому используем
-    // пользовательские роли data(), а не флаги.
     static int const ManualMassRole = Qt::UserRole + 101;
     static int const ManualVolRole  = Qt::UserRole + 102;
     bool isManual(QTableWidgetItem *item, int role) const;

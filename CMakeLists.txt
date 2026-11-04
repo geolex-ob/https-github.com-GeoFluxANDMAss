@@ -13,6 +13,7 @@ add_executable(GeoFluxANDMAss
     main.cpp
     mainwindow.cpp
     knbkeditordialog.cpp
+    tankvolumetab.cpp
 )
 
 target_link_libraries(GeoFluxANDMAss PRIVATE
