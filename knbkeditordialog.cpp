@@ -39,7 +39,8 @@ KNBKEditorDialog::KNBKEditorDialog(QWidget *parent) : QDialog(parent)
     // менялись местами и расчет веса инструмента давал неверный результат.
     m_table = new QTableWidget(0, 6, this);
     m_table->setHorizontalHeaderLabels(KNBK_CSV_HEADER.mid(0, 6));
-    m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    // Interactive: пользователь может настраивать ширину колонок мышью
+    m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
 
     layout->addLayout(btnLayout);
     layout->addWidget(m_table);
