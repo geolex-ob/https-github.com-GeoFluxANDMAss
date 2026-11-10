@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "knbkeditordialog.h"
 #include "tankvolumetab.h"
+#include "ipttab.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -80,7 +81,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
     auto *helpMenu = menuBar()->addMenu("Справка");
     helpMenu->addAction("О программе", [this](){
-        QMessageBox::about(this, "О программе", "Расчеты ГТИ.\nhttps://github.com/geolex-ob/https-github.com-GeoFluxANDMAss\nВерсия 0.1.5");
+        QMessageBox::about(this, "О программе", "Расчеты ГТИ.\nhttps://github.com/geolex-ob/https-github.com-GeoFluxANDMAss\nВерсия 0.2.0");
     });
 
     statusBar()->showMessage("Готово");
@@ -425,7 +426,8 @@ QString MainWindow::getDataPath(const QString &fileName)
 
 void MainWindow::setupUI()
 {
-    // Вкладки: [0] — КНБК/веса (существующая логика), [1] — Объём ёмкости
+    // Вкладки: [0] — КНБК/веса (существующая логика), [1] — Объём ёмкости,
+    //         [2] — ИПТ (вес инструмента при герметизированной полости)
     m_tabs = new QTabWidget(this);
     setCentralWidget(m_tabs);
 
@@ -583,6 +585,20 @@ void MainWindow::setupUI()
     // ---- Вторая вкладка: объём горизонтального цилиндра ----
     m_tankTab = new TankVolumeTab(this);
     m_tabs->addTab(m_tankTab, "Объём ёмкости");
+
+    // ---- Третья вкладка: ИПТ (вес инструмента, герметизированная полость) ----
+    m_iptTab = new IPTTab(this);
+    m_tabs->addTab(m_iptTab, "ИПТ / вес инструмента");
+
+    // При переключении на вкладку ИПТ — синхронизировать данные с 1-й вкладки
+    connect(m_tabs, &QTabWidget::currentChanged, this, [this](int idx) {
+        if (m_tabs->widget(idx) == m_iptTab && m_iptTab) {
+            QMap<QString, QString> info;
+            for (auto it = m_infoInputs.begin(); it != m_infoInputs.end(); ++it)
+                info[it.key()] = it.value()->text();
+            m_iptTab->syncFromMain(info, m_knbkTable);
+        }
+    });
 }
 
 void MainWindow::setupKNBKCombo(int row)

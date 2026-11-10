@@ -14,6 +14,7 @@
 extern const QStringList KNBK_CSV_HEADER;
 
 class TankVolumeTab;
+class IPTTab;
 
 class MainWindow : public QMainWindow
 {
@@ -89,9 +90,10 @@ private:
     QTableWidget *m_knbkTable = nullptr;
     QTableWidget *m_constructionTable = nullptr;
 
-    // Вкладки: [0] — КНБК / веса (текущая логика), [1] — Объём ёмкости
+    // Вкладки: [0] — КНБК / веса, [1] — Объём ёмкости, [2] — ИПТ
     QTabWidget *m_tabs = nullptr;
     TankVolumeTab *m_tankTab = nullptr;
+    IPTTab *m_iptTab = nullptr;
 
     struct KNBKData {
         QString length;
