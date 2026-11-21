@@ -81,7 +81,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
     auto *helpMenu = menuBar()->addMenu("Справка");
     helpMenu->addAction("О программе", [this](){
-        QMessageBox::about(this, "О программе", "Расчеты ГТИ.\nhttps://github.com/geolex-ob/https-github.com-GeoFluxANDMAss\nВерсия 0.2.0");
+        QMessageBox::about(this, "О программе", "Расчеты ГТИ.\nhttps://github.com/geolex-ob/https-github.com-GeoFluxANDMAss\nВерсия 0.2.1");
     });
 
     statusBar()->showMessage("Готово");
@@ -911,30 +911,60 @@ void MainWindow::updateToBottomLengths()
         depth = m_infoInputs["Глубина спуска, м:"]->text().replace(",", ".").toDouble();
 
     m_knbkTable->blockSignals(true);
-    double cumLen = 0.0;
-    for (int row = 0; row < m_knbkTable->rowCount(); ++row) {
+
+    auto rowLength = [&](int row) -> double {
+        QTableWidgetItem *lenItem = m_knbkTable->item(row, 1);
+        if (!lenItem) return 0.0;
+        QString s = lenItem->text();
+        s.replace(",", ".");
+        return s.toDouble();
+    };
+
+    auto isMarked = [&](int row) -> bool {
         QTableWidgetItem *codeCell = m_knbkTable->item(row, 0);
-        QTableWidgetItem *lenItem  = m_knbkTable->item(row, 1);
-        const bool toBottom = codeCell && codeCell->data(ToBottomRole).toBool();
-        const bool single   = codeCell && codeCell->data(SingleToBottomRole).toBool();
-        const bool calc = single || toBottom;
-        if (calc && lenItem) {
-            const double newLen = depth - cumLen;
-            lenItem->setText(QString::number(newLen > 0 ? newLen : 0.0, 'f', 2));
+        if (!codeCell) return false;
+        return codeCell->data(ToBottomRole).toBool()
+        || codeCell->data(SingleToBottomRole).toBool();
+    };
+
+    // Суммарная длина всех элементов БЕЗ метки «до забоя» —
+    // независимо от их положения в таблице (выше или ниже отмеченного).
+    double othersLen = 0.0;
+    QList<int> markedRows;
+    for (int row = 0; row < m_knbkTable->rowCount(); ++row) {
+        if (isMarked(row)) {
+            markedRows.append(row);
+        } else {
+            othersLen += rowLength(row);
+        }
+    }
+
+    // Длина отмеченного элемента = глубина спуска − сумма длин остальных
+    // элементов компоновки. Количество и длины остальных элементов
+    // учитываются автоматически. При нескольких метках длины пересчитываются
+    // по значениям остальных отмеченных строк на момент пересчёта.
+    QMap<int, double> newLengths;
+    for (int row : markedRows) {
+        double otherMarkedLen = 0.0;
+        for (int r : markedRows) {
+            if (r != row) otherMarkedLen += rowLength(r);
+        }
+        const double newLen = depth - othersLen - otherMarkedLen;
+        newLengths[row] = newLen > 0 ? newLen : 0.0;
+    }
+
+    for (int row = 0; row < m_knbkTable->rowCount(); ++row) {
+        QTableWidgetItem *lenItem = m_knbkTable->item(row, 1);
+        if (!lenItem) continue;
+        if (newLengths.contains(row)) {
+            lenItem->setText(QString::number(newLengths.value(row), 'f', 2));
             lenItem->setFlags((lenItem->flags() & ~Qt::ItemIsEditable)
-                              | Qt::ItemIsSelectable | Qt::ItemIsEnabled);
+            | Qt::ItemIsSelectable | Qt::ItemIsEnabled);
             lenItem->setBackground(QBrush(Qt::lightGray));
-        } else if (lenItem) {
+        } else {
             lenItem->setFlags(lenItem->flags() | Qt::ItemIsEditable);
             lenItem->setBackground(QBrush(Qt::white));
         }
-        double l = 0.0;
-        if (lenItem) {
-            QString s = lenItem->text();
-            s.replace(",", ".");
-            l = s.toDouble();
-        }
-        cumLen += l;
     }
     m_knbkTable->blockSignals(false);
 
